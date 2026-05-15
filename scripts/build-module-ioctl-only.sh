@@ -11,6 +11,7 @@ ARTIFACT="$REPO_DIR/artifacts/binder-dirty-lgc1-o20-${KERNEL_RELEASE}.ko"
 
 if [ ! -f "$CONFIG" ]; then
   echo "ERROR: kernel config not found: $CONFIG"
+  echo "Set CONFIG=/path/to/config-lg-c1"
   exit 1
 fi
 
@@ -35,67 +36,6 @@ git apply "$REPO_DIR/patches/0001-lg-webos-dirty-binder-module.patch"
 
 echo "=== copying dirty Binder header ==="
 cp "$REPO_DIR/src/binder_dirty_exports.h" drivers/android/binder_dirty_exports.h
-
-echo "=== injecting alloc shim for Binder mmap ==="
-python3 - <<'PY'
-from pathlib import Path
-import re
-
-p = Path("drivers/android/binder.c")
-txt = p.read_text()
-
-helper = '''
-static struct page *binder_dirty_alloc_page_for_mmap(void)
-{
-	unsigned long addr;
-	struct page *page;
-
-	pr_err("binder_alloc_shim: before __get_free_page GFP_KERNEL=0x%x\\n", GFP_KERNEL);
-	addr = __get_free_page(GFP_KERNEL);
-	pr_err("binder_alloc_shim: after __get_free_page addr=0x%lx\\n", addr);
-	if (!addr)
-		return NULL;
-
-	memset((void *)addr, 0, PAGE_SIZE);
-	page = virt_to_page((void *)addr);
-	pr_err("binder_alloc_shim: virt_to_page page=%p\\n", page);
-	return page;
-}
-
-'''
-
-if "binder_dirty_alloc_page_for_mmap" not in txt:
-    marker = "static int binder_update_page_range"
-    idx = txt.find(marker)
-    if idx < 0:
-        raise SystemExit("cannot find binder_update_page_range")
-    txt = txt[:idx] + helper + txt[idx:]
-
-txt, n = re.subn(r"alloc_page\s*\([^;]*\)", "binder_dirty_alloc_page_for_mmap()", txt)
-print("alloc_page replacements=%d" % n)
-if n == 0:
-    print("WARNING: no alloc_page call replaced")
-
-m = re.search(r"static int binder_mmap\(struct file \*filp, struct vm_area_struct \*vma\)\n\{", txt)
-if m and "binder_alloc_shim: binder_mmap enter" not in txt:
-    pos = m.end()
-    insert = "\n\tpr_err(\"binder_alloc_shim: binder_mmap enter filp=%p vma=%p start=0x%lx end=0x%lx flags=0x%lx\\n\",\n\t       filp, vma, vma->vm_start, vma->vm_end, vma->vm_flags);\n"
-    txt = txt[:pos] + insert + txt[pos:]
-
-m = re.search(r"static int binder_update_page_range\((.*?)\)\n\{", txt, flags=re.S)
-if m and "binder_alloc_shim: update_page_range enter" not in txt:
-    pos = m.end()
-    insert = "\n\tpr_err(\"binder_alloc_shim: update_page_range enter allocate=%d start=%p end=%p vma=%p\\n\",\n\t       allocate, start, end, vma);\n"
-    txt = txt[:pos] + insert + txt[pos:]
-
-if "binder_alloc_shim: before vm_insert_page" not in txt:
-    txt = txt.replace(
-        "ret = vm_insert_page(vma, user_page_addr, page[0]);",
-        'pr_err("binder_alloc_shim: before vm_insert_page user_page_addr=0x%lx page=%p\\n", user_page_addr, page[0]);\n\t\t\tret = vm_insert_page(vma, user_page_addr, page[0]);\n\t\t\tpr_err("binder_alloc_shim: after vm_insert_page ret=%d\\n", ret);'
-    )
-
-p.write_text(txt)
-PY
 
 echo "=== configuring Binder module ==="
 printf '' > .scmversion
@@ -128,11 +68,9 @@ echo "=== module info ==="
 modinfo drivers/android/binder.ko | grep -E 'filename|name|vermagic|depends'
 modinfo -p drivers/android/binder.ko || true
 
-echo "=== checking debug strings ==="
-strings drivers/android/binder.ko | grep -E 'binder_alloc_shim|binder_dirty' | head -n 80 || true
-
-echo "=== checking known unresolved non-exported Binder symbols ==="
+echo "=== checking unresolved non-exported Binder symbols ==="
 BAD_SYMBOLS='zap_page_range|put_files_struct|get_vm_area|__fd_install|__close_fd|map_kernel_range_noflush|__lock_task_sighand|get_files_struct|__alloc_fd|can_nice|security_binder_'
+
 if nm -u drivers/android/binder.ko | sort | grep -E "$BAD_SYMBOLS"; then
   echo "ERROR: unresolved known non-exported Binder symbols remain"
   exit 1
@@ -140,7 +78,8 @@ fi
 
 echo "OK: no known non-exported Binder symbols remain"
 
-mkdir -p "$(dirname "$ARTIFACT")"
+echo "=== copying artifact ==="
 cp drivers/android/binder.ko "$ARTIFACT"
 ls -lh "$ARTIFACT"
+
 echo "Build completed: $ARTIFACT"
