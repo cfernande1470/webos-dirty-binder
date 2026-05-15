@@ -1,0 +1,184 @@
+diff --git a/drivers/android/Kconfig b/drivers/android/Kconfig
+index bdfc6c6f..b91e1b2d 100644
+--- a/drivers/android/Kconfig
++++ b/drivers/android/Kconfig
+@@ -8,7 +8,7 @@ config ANDROID
+ if ANDROID
+ 
+ config ANDROID_BINDER_IPC
+-	bool "Android Binder IPC Driver"
++	tristate "Android Binder IPC Driver"
+ 	depends on MMU
+ 	default n
+ 	---help---
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index 47ddfefe..6343456f 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -51,6 +51,7 @@ static DEFINE_MUTEX(binder_deferred_lock);
+ static DEFINE_MUTEX(binder_mmap_lock);
+ 
+ static HLIST_HEAD(binder_procs);
++#include "binder_dirty_exports.h"
+ static HLIST_HEAD(binder_deferred_list);
+ static HLIST_HEAD(binder_dead_nodes);
+ 
+@@ -383,13 +384,13 @@ static int task_get_unused_fd_flags(struct binder_proc *proc, int flags)
+ 	if (files == NULL)
+ 		return -ESRCH;
+ 
+-	if (!lock_task_sighand(proc->tsk, &irqs))
++	if (!dirty___lock_task_sighand(proc->tsk, &irqs))
+ 		return -EMFILE;
+ 
+ 	rlim_cur = task_rlimit(proc->tsk, RLIMIT_NOFILE);
+ 	unlock_task_sighand(proc->tsk, &irqs);
+ 
+-	return __alloc_fd(files, 0, rlim_cur, flags);
++	return dirty___alloc_fd(files, 0, rlim_cur, flags);
+ }
+ 
+ /*
+@@ -399,7 +400,7 @@ static void task_fd_install(
+ 	struct binder_proc *proc, unsigned int fd, struct file *file)
+ {
+ 	if (proc->files)
+-		__fd_install(proc->files, fd, file);
++		dirty___fd_install(proc->files, fd, file);
+ }
+ 
+ /*
+@@ -412,7 +413,7 @@ static long task_close_fd(struct binder_proc *proc, unsigned int fd)
+ 	if (proc->files == NULL)
+ 		return -ESRCH;
+ 
+-	retval = __close_fd(proc->files, fd);
++	retval = dirty___close_fd(proc->files, fd);
+ 	/* can't restart close syscall because file table entry was cleared */
+ 	if (unlikely(retval == -ERESTARTSYS ||
+ 		     retval == -ERESTARTNOINTR ||
+@@ -440,7 +441,7 @@ static void binder_set_nice(long nice)
+ {
+ 	long min_nice;
+ 
+-	if (can_nice(current, nice)) {
++	if (dirty_can_nice(current, nice)) {
+ 		set_user_nice(current, nice);
+ 		return;
+ 	}
+@@ -599,7 +600,7 @@ static int binder_update_page_range(struct binder_proc *proc, int allocate,
+ 				proc->pid, page_addr);
+ 			goto err_alloc_page_failed;
+ 		}
+-		ret = map_kernel_range_noflush((unsigned long)page_addr,
++		ret = dirty_map_kernel_range_noflush((unsigned long)page_addr,
+ 					PAGE_SIZE, PAGE_KERNEL, page);
+ 		flush_cache_vmap((unsigned long)page_addr,
+ 				(unsigned long)page_addr + PAGE_SIZE);
+@@ -629,7 +630,7 @@ free_range:
+ 	     page_addr -= PAGE_SIZE) {
+ 		page = &proc->pages[(page_addr - proc->buffer) / PAGE_SIZE];
+ 		if (vma)
+-			zap_page_range(vma, (uintptr_t)page_addr +
++			dirty_zap_page_range(vma, (uintptr_t)page_addr +
+ 				proc->user_buffer_offset, PAGE_SIZE, NULL);
+ err_vm_insert_page_failed:
+ 		unmap_kernel_range((unsigned long)page_addr, PAGE_SIZE);
+@@ -1408,7 +1409,7 @@ static void binder_transaction(struct binder_proc *proc,
+ 			return_error = BR_DEAD_REPLY;
+ 			goto err_dead_binder;
+ 		}
+-		if (security_binder_transaction(proc->tsk,
++		if (dirty_security_binder_transaction(proc->tsk,
+ 						target_proc->tsk) < 0) {
+ 			return_error = BR_FAILED_REPLY;
+ 			goto err_invalid_target_handle;
+@@ -1564,7 +1565,7 @@ static void binder_transaction(struct binder_proc *proc,
+ 				return_error = BR_FAILED_REPLY;
+ 				goto err_binder_get_ref_for_node_failed;
+ 			}
+-			if (security_binder_transfer_binder(proc->tsk,
++			if (dirty_security_binder_transfer_binder(proc->tsk,
+ 							    target_proc->tsk)) {
+ 				return_error = BR_FAILED_REPLY;
+ 				goto err_binder_get_ref_for_node_failed;
+@@ -1604,7 +1605,7 @@ static void binder_transaction(struct binder_proc *proc,
+ 				return_error = BR_FAILED_REPLY;
+ 				goto err_binder_get_ref_failed;
+ 			}
+-			if (security_binder_transfer_binder(proc->tsk,
++			if (dirty_security_binder_transfer_binder(proc->tsk,
+ 							    target_proc->tsk)) {
+ 				return_error = BR_FAILED_REPLY;
+ 				goto err_binder_get_ref_failed;
+@@ -1668,7 +1669,7 @@ static void binder_transaction(struct binder_proc *proc,
+ 				return_error = BR_FAILED_REPLY;
+ 				goto err_fget_failed;
+ 			}
+-			if (security_binder_transfer_file(proc->tsk,
++			if (dirty_security_binder_transfer_file(proc->tsk,
+ 							  target_proc->tsk,
+ 							  file) < 0) {
+ 				fput(file);
+@@ -2715,7 +2716,7 @@ static int binder_ioctl_set_ctx_mgr(struct file *filp)
+ 		ret = -EBUSY;
+ 		goto out;
+ 	}
+-	ret = security_binder_set_context_mgr(proc->tsk);
++	ret = dirty_security_binder_set_context_mgr(proc->tsk);
+ 	if (ret < 0)
+ 		goto out;
+ 	if (uid_valid(binder_context_mgr_uid)) {
+@@ -2891,7 +2892,7 @@ static int binder_mmap(struct file *filp, struct vm_area_struct *vma)
+ 		goto err_already_mapped;
+ 	}
+ 
+-	area = get_vm_area(vma->vm_end - vma->vm_start, VM_IOREMAP);
++	area = dirty_get_vm_area(vma->vm_end - vma->vm_start, VM_IOREMAP);
+ 	if (area == NULL) {
+ 		ret = -ENOMEM;
+ 		failure_string = "get_vm_area";
+@@ -2932,7 +2933,7 @@ static int binder_mmap(struct file *filp, struct vm_area_struct *vma)
+ 	binder_insert_free_buffer(proc, buffer);
+ 	proc->free_async_space = proc->buffer_size / 2;
+ 	barrier();
+-	proc->files = get_files_struct(current);
++	proc->files = dirty_get_files_struct(current);
+ 	proc->vma = vma;
+ 	proc->vma_vm_mm = vma->vm_mm;
+ 
+@@ -3219,7 +3220,7 @@ static void binder_deferred_func(struct work_struct *work)
+ 
+ 		binder_unlock(__func__);
+ 		if (files)
+-			put_files_struct(files);
++			dirty_put_files_struct(files);
+ 	} while (proc);
+ }
+ static DECLARE_WORK(binder_deferred_work, binder_deferred_func);
+diff --git a/drivers/staging/android/Kconfig b/drivers/staging/android/Kconfig
+index 42b15126..0f603b82 100644
+--- a/drivers/staging/android/Kconfig
++++ b/drivers/staging/android/Kconfig
+@@ -3,7 +3,7 @@ menu "Android"
+ if ANDROID
+ 
+ config ASHMEM
+-	bool "Enable the Anonymous Shared Memory Subsystem"
++	tristate "Enable the Anonymous Shared Memory Subsystem"
+ 	default n
+ 	depends on SHMEM
+ 	---help---
+diff --git a/scripts/dtc/dtc-lexer.l b/scripts/dtc/dtc-lexer.l
+index 0ee1caf0..336c93ca 100644
+--- a/scripts/dtc/dtc-lexer.l
++++ b/scripts/dtc/dtc-lexer.l
+@@ -38,7 +38,7 @@ LINECOMMENT	"//".*\n
+ #include "srcpos.h"
+ #include "dtc-parser.tab.h"
+ 
+-YYLTYPE yylloc;
++extern YYLTYPE yylloc;
+ extern bool treesource_error;
+ 
+ /* CAUTION: this will stop working if we ever use yyless() or yyunput() */
