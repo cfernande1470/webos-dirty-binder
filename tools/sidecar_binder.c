@@ -27,6 +27,7 @@
 #define MAX_SERVICES 16
 #define NAME_LEN 64
 #define PAYLOAD_LEN 128
+#define SIDE_BC_REQUEST_DEATH_NOTIFICATION_RAW 0x400c630eU
 
 struct sc_add_msg {
     uint32_t magic;
@@ -712,10 +713,10 @@ static int process_sm_transaction(int fd, struct binder_transaction_data *tr)
             entry->death_cookie = (binder_uintptr_t)entry;
 
             if (binder_send_handle_cookie_cmd(fd,
-                                              BC_REQUEST_DEATH_NOTIFICATION,
-                                              handle,
-                                              entry->death_cookie,
-                                              "BC_REQUEST_DEATH_NOTIFICATION service handle") != 0) {
+                                          SIDE_BC_REQUEST_DEATH_NOTIFICATION_RAW,
+                                          handle,
+                                          entry->death_cookie,
+                                          "BC_REQUEST_DEATH_NOTIFICATION_RAW service handle") != 0) {
                 /*
                  * Keep addService usable even if this experimental kernel
                  * rejects death notifications. The death smoke test will make
