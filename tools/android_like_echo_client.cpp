@@ -3,7 +3,8 @@
 #include <stdio.h>
 #include <utility>
 
-#define SC_CODE_ECHO 0x4543484fU
+#define ANDROID_LIKE_ECHO_DESCRIPTOR "webos.dirtybinder.IEchoService"
+#define ANDROID_LIKE_TRANSACTION_ECHO_TEXT 1U
 
 class IEchoService {
 public:
@@ -32,10 +33,13 @@ public:
         if (out && out_len)
             out[0] = '\0';
 
+        if (data.writeInterfaceToken(ANDROID_LIKE_ECHO_DESCRIPTOR) != 0)
+            return -1;
+
         if (data.writeCString(message ? message : "") != 0)
             return -1;
 
-        if (remote_->transact(SC_CODE_ECHO, data, &reply) != 0)
+        if (remote_->transact(ANDROID_LIKE_TRANSACTION_ECHO_TEXT, data, &reply) != 0)
             return 1;
 
         if (reply.readSidecarTextReply(&status, &text) != 0)
@@ -113,6 +117,7 @@ int main(int argc, char **argv)
     }
 
     printf("Android-like echoText reply=%s\n", reply);
+    printf("ANDROID_LIKE_AIDL_WIRE_OK\n");
     printf("ANDROID_LIKE_API_CLIENT_OK\n");
     return 0;
 }

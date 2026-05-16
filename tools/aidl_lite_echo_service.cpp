@@ -25,6 +25,8 @@
 
 #define AOSP_SM_DESCRIPTOR "android.os.IServiceManager"
 #define AOSP_SM_ADD_SERVICE_TRANSACTION 3U
+#define ANDROID_LIKE_ECHO_DESCRIPTOR "webos.dirtybinder.IEchoService"
+#define ANDROID_LIKE_TRANSACTION_ECHO_TEXT 1U
 
 struct sc_text_reply {
     uint32_t magic;
@@ -485,6 +487,94 @@ static int send_text_reply(int fd,
     return binder_write_read(fd, writebuf, (size_t)(p - writebuf), NULL, 0, tag) < 0 ? -1 : 0;
 }
 
+struct aidl_like_parcel_view {
+    const uint8_t *data;
+    size_t size;
+    size_t pos;
+};
+
+static int aidl_like_read_i32(struct aidl_like_parcel_view *v, int32_t *out)
+{
+    if (v->pos + sizeof(*out) > v->size)
+        return -1;
+
+    memcpy(out, v->data + v->pos, sizeof(*out));
+    v->pos += sizeof(*out);
+    return 0;
+}
+
+static int aidl_like_read_string16_ascii(struct aidl_like_parcel_view *v,
+                                         char *out,
+                                         size_t out_len)
+{
+    int32_t len;
+    size_t bytes;
+    size_t padded;
+    size_t i;
+
+    if (!out || out_len == 0)
+        return -1;
+
+    out[0] = '\0';
+
+    if (aidl_like_read_i32(v, &len) != 0)
+        return -1;
+
+    if (len < 0)
+        return 0;
+
+    bytes = ((size_t)len + 1U) * 2U;
+    padded = align4(bytes);
+
+    if (v->pos + padded > v->size)
+        return -1;
+
+    for (i = 0; i < (size_t)len && i + 1 < out_len; i++) {
+        uint8_t lo = v->data[v->pos + i * 2U];
+        uint8_t hi = v->data[v->pos + i * 2U + 1U];
+
+        out[i] = hi == 0 ? (char)lo : '?';
+    }
+
+    out[i < out_len ? i : out_len - 1] = '\0';
+    v->pos += padded;
+    return 0;
+}
+
+static int aidl_like_parse_echo_request(const void *data,
+                                        size_t size,
+                                        const char **message_out,
+                                        char *descriptor,
+                                        size_t descriptor_len)
+{
+    struct aidl_like_parcel_view v;
+    int32_t strict_policy;
+
+    if (!data || !message_out || !descriptor || descriptor_len == 0)
+        return -1;
+
+    *message_out = "";
+
+    v.data = (const uint8_t *)data;
+    v.size = size;
+    v.pos = 0;
+
+    if (aidl_like_read_i32(&v, &strict_policy) != 0)
+        return -1;
+
+    if (aidl_like_read_string16_ascii(&v, descriptor, descriptor_len) != 0)
+        return -1;
+
+    if (strcmp(descriptor, ANDROID_LIKE_ECHO_DESCRIPTOR) != 0)
+        return -1;
+
+    if (v.pos >= v.size)
+        return -1;
+
+    *message_out = (const char *)(v.data + v.pos);
+    return 0;
+}
+
 static int process_transaction(int fd,
                                BnEchoService &service,
                                struct binder_transaction_data *tr)
@@ -503,6 +593,44 @@ static int process_transaction(int fd,
                                "PONG from AIDL-lite service",
                                0,
                                "AIDL-lite ping reply");
+    }
+
+    if (tr->code == ANDROID_LIKE_TRANSACTION_ECHO_TEXT) {
+        const char *msg = NULL;
+        char descriptor[128];
+
+        if (aidl_like_parse_echo_request((void *)(uintptr_t)tr->data.ptr.buffer,
+                                         (size_t)tr->data_size,
+                                         &msg,
+                                         descriptor,
+                                         sizeof(descriptor)) != 0) {
+            return send_text_reply(fd,
+                                   tr->data.ptr.buffer,
+                                   "AIDL-like bad interface token",
+                                   1,
+                                   "AIDL-like echo bad-token reply");
+        }
+
+        printf("AIDL-like service descriptor=%s message=%s\n",
+               descriptor,
+               msg ? msg : "");
+
+        if (service.onEcho(msg,
+                           msg ? strlen(msg) + 1U : 0,
+                           out,
+                           sizeof(out)) != 0) {
+            return send_text_reply(fd,
+                                   tr->data.ptr.buffer,
+                                   "AIDL-like echo failed",
+                                   1,
+                                   "AIDL-like echo error reply");
+        }
+
+        return send_text_reply(fd,
+                               tr->data.ptr.buffer,
+                               out,
+                               0,
+                               "AIDL-like echo reply");
     }
 
     if (tr->code == SC_CODE_ECHO) {

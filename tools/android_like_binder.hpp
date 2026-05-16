@@ -82,6 +82,10 @@ public:
         return parcel_.writeCString(value);
     }
 
+    int writeInterfaceToken(const char *descriptor) {
+        return parcel_.writeInterfaceToken(descriptor);
+    }
+
     int readSidecarTextReply(uint32_t *status, const char **text) const {
         return parcel_.readSidecarTextReply(status, text);
     }
