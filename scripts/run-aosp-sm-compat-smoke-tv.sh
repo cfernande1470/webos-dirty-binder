@@ -66,8 +66,21 @@ if [ ! -x bin/aosp_sm_probe ]; then
   exit 2
 fi
 
+set +e
 bin/aosp_sm_probe test.aosp > logs/aosp_sm_probe.log 2>&1
+probe_rc="$?"
+set -e
+
 cat logs/aosp_sm_probe.log
+
+if [ "$probe_rc" -ne 0 ]; then
+  echo "FAIL: aosp_sm_probe rc=$probe_rc"
+  echo "== mini_servicemgr log =="
+  cat logs/aosp_sm_mgr.log || true
+  echo "== echo_service log =="
+  cat logs/aosp_sm_echo_service.log || true
+  exit "$probe_rc"
+fi
 
 grep -q 'AOSP_SM_COMPAT_OK' logs/aosp_sm_probe.log
 

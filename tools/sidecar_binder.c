@@ -704,6 +704,213 @@ static int sm_ping_service_handle(int fd, uint32_t handle, const char *name)
     }
 }
 
+#define AOSP_SM_DESCRIPTOR "android.os.IServiceManager"
+#define AOSP_SM_GET_SERVICE_TRANSACTION 1U
+#define AOSP_SM_CHECK_SERVICE_TRANSACTION 2U
+#define AOSP_SM_ADD_SERVICE_TRANSACTION 3U
+#define AOSP_SM_LIST_SERVICES_TRANSACTION 4U
+
+static size_t aosp_align4(size_t n)
+{
+    return (n + 3U) & ~3U;
+}
+
+struct aosp_parcel_view {
+    uint8_t *data;
+    size_t size;
+    size_t pos;
+};
+
+static int aosp_read_i32(struct aosp_parcel_view *v, int32_t *out)
+{
+    if (v->pos + sizeof(int32_t) > v->size)
+        return -1;
+
+    memcpy(out, v->data + v->pos, sizeof(*out));
+    v->pos += sizeof(*out);
+    return 0;
+}
+
+static int aosp_read_string16_ascii(struct aosp_parcel_view *v, char *out, size_t out_len)
+{
+    int32_t len;
+    size_t bytes;
+    size_t padded;
+    size_t i;
+
+    if (!out || out_len == 0)
+        return -1;
+
+    out[0] = '\0';
+
+    if (aosp_read_i32(v, &len) != 0)
+        return -1;
+
+    if (len < 0) {
+        out[0] = '\0';
+        return 0;
+    }
+
+    bytes = ((size_t)len + 1U) * 2U;
+    padded = aosp_align4(bytes);
+
+    if (v->pos + padded > v->size)
+        return -1;
+
+    for (i = 0; i < (size_t)len && i + 1 < out_len; i++) {
+        uint8_t lo = v->data[v->pos + i * 2U];
+        uint8_t hi = v->data[v->pos + i * 2U + 1U];
+
+        if (hi != 0) {
+            out[i] = '?';
+        } else {
+            out[i] = (char)lo;
+        }
+    }
+
+    out[i < out_len ? i : out_len - 1] = '\0';
+    v->pos += padded;
+    return 0;
+}
+
+static int aosp_parse_sm_name(struct binder_transaction_data *tr, char *name, size_t name_len)
+{
+    struct aosp_parcel_view v;
+    int32_t strict_policy;
+    char descriptor[128];
+
+    if (!tr->data.ptr.buffer || tr->data_size == 0)
+        return -1;
+
+    v.data = (uint8_t *)(uintptr_t)tr->data.ptr.buffer;
+    v.size = (size_t)tr->data_size;
+    v.pos = 0;
+
+    /*
+     * Native libbinder Parcel::writeInterfaceToken historically writes:
+     *
+     *   int32 strict-mode policy
+     *   String16 interface descriptor
+     *
+     * Then IServiceManager::checkService writes:
+     *
+     *   String16 service name
+     */
+    if (aosp_read_i32(&v, &strict_policy) == 0 &&
+        aosp_read_string16_ascii(&v, descriptor, sizeof(descriptor)) == 0 &&
+        strcmp(descriptor, AOSP_SM_DESCRIPTOR) == 0 &&
+        aosp_read_string16_ascii(&v, name, name_len) == 0) {
+        return 0;
+    }
+
+    /*
+     * Fallback for tiny probes that write descriptor directly without the
+     * strict-mode header.
+     */
+    v.pos = 0;
+    if (aosp_read_string16_ascii(&v, descriptor, sizeof(descriptor)) == 0 &&
+        strcmp(descriptor, AOSP_SM_DESCRIPTOR) == 0 &&
+        aosp_read_string16_ascii(&v, name, name_len) == 0) {
+        return 0;
+    }
+
+    return -1;
+}
+
+static int send_aosp_handle_reply(int fd,
+                                  binder_uintptr_t incoming_buffer,
+                                  uint32_t handle,
+                                  const char *tag)
+{
+    uint8_t writebuf[1024];
+    uint8_t *p = writebuf;
+    binder_size_t offsets[1];
+    uint32_t cmd;
+    struct binder_transaction_data reply_tr;
+    struct flat_binder_object obj;
+
+    memset(&obj, 0, sizeof(obj));
+    obj.type = BINDER_TYPE_HANDLE;
+    obj.flags = FLAT_BINDER_FLAG_ACCEPTS_FDS;
+    obj.handle = handle;
+    obj.cookie = 0;
+
+    offsets[0] = 0;
+
+    cmd = BC_FREE_BUFFER;
+    append_u32(&p, cmd);
+    append_bytes(&p, &incoming_buffer, sizeof(incoming_buffer));
+
+    cmd = BC_REPLY;
+    append_u32(&p, cmd);
+
+    memset(&reply_tr, 0, sizeof(reply_tr));
+    reply_tr.data_size = sizeof(obj);
+    reply_tr.offsets_size = sizeof(offsets);
+    reply_tr.data.ptr.buffer = (binder_uintptr_t)&obj;
+    reply_tr.data.ptr.offsets = (binder_uintptr_t)offsets;
+
+    append_bytes(&p, &reply_tr, sizeof(reply_tr));
+
+    printf("sm-server: AOSP handle reply handle=%u\n", handle);
+    return binder_write_read(fd, writebuf, (size_t)(p - writebuf), NULL, 0, tag) < 0 ? -1 : 0;
+}
+
+static int process_aosp_sm_transaction(int fd, struct binder_transaction_data *tr)
+{
+    char name[NAME_LEN];
+    uint32_t handle;
+
+    if (tr->code != AOSP_SM_CHECK_SERVICE_TRANSACTION &&
+        tr->code != AOSP_SM_GET_SERVICE_TRANSACTION) {
+        return 1;
+    }
+
+    if (aosp_parse_sm_name(tr, name, sizeof(name)) != 0) {
+        printf("sm-server: AOSP SM bad parcel code=%u\n", tr->code);
+        return send_text_reply(fd,
+                               tr->data.ptr.buffer,
+                               "AOSP BAD PARCEL",
+                               1,
+                               "sm-server AOSP bad parcel reply");
+    }
+
+    handle = registry_get(name);
+
+    printf("sm-server: AOSP %s name=%s handle=%u\n",
+           tr->code == AOSP_SM_CHECK_SERVICE_TRANSACTION ? "checkService" : "getService",
+           name,
+           handle);
+
+    if (!handle) {
+        return send_aosp_handle_reply(fd,
+                                      tr->data.ptr.buffer,
+                                      0,
+                                      "sm-server AOSP notfound handle reply");
+    }
+
+    if (sm_ping_service_handle(fd, handle, name) != 0) {
+        struct service_entry *entry = registry_find_by_name(name);
+
+        if (entry) {
+            printf("sm-server: AOSP lazy cleanup removing stale service name=%s handle=%u\n",
+                   entry->name,
+                   entry->handle);
+            memset(entry, 0, sizeof(*entry));
+        }
+
+        return send_aosp_handle_reply(fd,
+                                      tr->data.ptr.buffer,
+                                      0,
+                                      "sm-server AOSP stale-notfound handle reply");
+    }
+
+    return send_aosp_handle_reply(fd,
+                                  tr->data.ptr.buffer,
+                                  handle,
+                                  "sm-server AOSP check/get handle reply");
+}
+
 static int process_sm_transaction(int fd, struct binder_transaction_data *tr)
 {
     printf("sm-server BR_TRANSACTION code=0x%x sender_pid=%d sender_euid=%u data_size=%" PRIu64 " offsets_size=%" PRIu64 "\n",
@@ -712,6 +919,13 @@ static int process_sm_transaction(int fd, struct binder_transaction_data *tr)
            tr->sender_euid,
            (uint64_t)tr->data_size,
            (uint64_t)tr->offsets_size);
+
+    if (tr->code == AOSP_SM_GET_SERVICE_TRANSACTION ||
+        tr->code == AOSP_SM_CHECK_SERVICE_TRANSACTION ||
+        tr->code == AOSP_SM_ADD_SERVICE_TRANSACTION ||
+        tr->code == AOSP_SM_LIST_SERVICES_TRANSACTION) {
+        return process_aosp_sm_transaction(fd, tr);
+    }
 
     if (tr->code == SC_CODE_ADD_SERVICE) {
         struct sc_add_msg *msg;
