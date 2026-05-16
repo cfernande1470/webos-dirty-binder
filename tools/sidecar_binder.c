@@ -28,6 +28,7 @@
 #define NAME_LEN 64
 #define PAYLOAD_LEN 128
 #define SIDE_BC_REQUEST_DEATH_NOTIFICATION_RAW 0x400c630eU
+#define SIDE_BR_DEAD_BINDER_RAW 0x8008720fU
 
 struct sc_add_msg {
     uint32_t magic;
@@ -497,7 +498,7 @@ static int handle_dead_or_clear_cmd(int fd,
      */
     registry_remove_by_death_cookie(cookie);
 
-    if (rcmd == BR_DEAD_BINDER || rcmd == 0x8008720fU)
+    if (rcmd == BR_DEAD_BINDER || rcmd == SIDE_BR_DEAD_BINDER_RAW || rcmd == 0x8008720fU)
         return binder_send_dead_binder_done(fd, cookie, "BC_DEAD_BINDER_DONE");
 
     /*
@@ -829,6 +830,11 @@ static int run_sm_server(void)
                            rcmd == BR_RELEASE || rcmd == BR_DECREFS) {
                     if (handle_ref_cmd(fd, rcmd, &ptr, end, "sm-server") != 0)
                         return 1;
+                } else if (rcmd == BR_DEAD_BINDER ||
+                           rcmd == SIDE_BR_DEAD_BINDER_RAW ||
+                           rcmd == 0x8008720fU) {
+                    if (handle_dead_or_clear_cmd(fd, rcmd, &ptr, end, "sm-server") != 0)
+                        return 1;
                 } else {
                     printf("sm-server unhandled cmd=0x%08x\n", rcmd);
                     return 1;
@@ -871,10 +877,15 @@ static int run_sm_server(void)
                        rcmd == BR_RELEASE || rcmd == BR_DECREFS) {
                 if (handle_ref_cmd(fd, rcmd, &ptr, end, "sm-server") != 0)
                     return 1;
-            } else {
-                printf("sm-server unhandled cmd=0x%08x\n", rcmd);
-                return 1;
-            }
+            } else if (rcmd == BR_DEAD_BINDER ||
+                           rcmd == SIDE_BR_DEAD_BINDER_RAW ||
+                           rcmd == 0x8008720fU) {
+                    if (handle_dead_or_clear_cmd(fd, rcmd, &ptr, end, "sm-server") != 0)
+                        return 1;
+                } else {
+                    printf("sm-server unhandled cmd=0x%08x\n", rcmd);
+                    return 1;
+                }
         }
     }
 
