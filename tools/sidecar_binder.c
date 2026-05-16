@@ -81,6 +81,9 @@ static void append_u32(uint8_t **p, uint32_t v)
 
 static const char *cmd_name(uint32_t cmd)
 {
+    if (cmd == 0x8008720fU)
+        return "BR_DEAD_BINDER_RAW";
+
     switch (cmd) {
     case BR_NOOP: return "BR_NOOP";
     case BR_TRANSACTION: return "BR_TRANSACTION";
@@ -466,24 +469,41 @@ static int registry_remove_by_death_cookie(binder_uintptr_t cookie)
     return -1;
 }
 
-static int handle_dead_binder_cmd(int fd, uint8_t **ptr, uint8_t *end, const char *who)
+static int handle_dead_or_clear_cmd(int fd,
+                                    uint32_t rcmd,
+                                    uint8_t **ptr,
+                                    uint8_t *end,
+                                    const char *who)
 {
     binder_uintptr_t cookie;
 
     if (*ptr + sizeof(cookie) > end) {
-        fprintf(stderr, "%s: truncated BR_DEAD_BINDER\n", who);
+        fprintf(stderr, "%s: truncated death/clear cmd=0x%08x\n", who, rcmd);
         return -1;
     }
 
     memcpy(&cookie, *ptr, sizeof(cookie));
     *ptr += sizeof(cookie);
 
-    printf("%s BR_DEAD_BINDER cookie=0x%" PRIx64 "\n",
-           who, (uint64_t)cookie);
+    printf("%s death/clear cmd=0x%08x cookie=0x%" PRIx64 "\n",
+           who, rcmd, (uint64_t)cookie);
 
+    /*
+     * On the tested LG/webOS Binder 4.4 target, the alternate
+     * BC_REQUEST_DEATH_NOTIFICATION encoding 0x400c630e is accepted, but the
+     * return observed after service death is raw BR_DEAD_BINDER 0x8008720f.
+     * Treat it as a death notification, remove the service entry, and ack it.
+     */
     registry_remove_by_death_cookie(cookie);
 
-    return binder_send_dead_binder_done(fd, cookie, "BC_DEAD_BINDER_DONE");
+    if (rcmd == BR_DEAD_BINDER || rcmd == 0x8008720fU)
+        return binder_send_dead_binder_done(fd, cookie, "BC_DEAD_BINDER_DONE");
+
+    /*
+     * BR_CLEAR_DEATH_NOTIFICATION_DONE-like returns already clear/free their
+     * death work in the driver. Do not send BC_DEAD_BINDER_DONE for them.
+     */
+    return 0;
 }
 
 static uint32_t registry_get(const char *name)
@@ -621,8 +641,8 @@ static int sm_ping_service_handle(int fd, uint32_t handle, const char *name)
             if (rcmd == BR_NOOP || rcmd == BR_TRANSACTION_COMPLETE)
                 continue;
 
-            if (rcmd == BR_DEAD_BINDER) {
-                if (handle_dead_binder_cmd(fd, &ptr, end, "sm-server") != 0)
+            if (rcmd == BR_DEAD_BINDER || rcmd == BR_CLEAR_DEATH_NOTIFICATION_DONE || rcmd == 0x8008720fU) {
+                if (handle_dead_or_clear_cmd(fd, rcmd, &ptr, end, "sm-server") != 0)
                     return -1;
                 continue;
             }
@@ -801,8 +821,8 @@ static int run_sm_server(void)
                 } else if (rcmd == BR_NOOP || rcmd == BR_SPAWN_LOOPER ||
                            rcmd == BR_TRANSACTION_COMPLETE) {
                     continue;
-                } else if (rcmd == BR_DEAD_BINDER) {
-                    if (handle_dead_binder_cmd(fd, &ptr, end, "sm-server") != 0)
+                } else if (rcmd == BR_DEAD_BINDER || rcmd == BR_CLEAR_DEATH_NOTIFICATION_DONE || rcmd == 0x8008720fU) {
+                    if (handle_dead_or_clear_cmd(fd, rcmd, &ptr, end, "sm-server") != 0)
                         return 1;
                 } else if (rcmd == BR_INCREFS || rcmd == BR_ACQUIRE ||
                            rcmd == BR_RELEASE || rcmd == BR_DECREFS) {
@@ -1004,6 +1024,9 @@ static int get_service_handle(int fd, const char *name, uint32_t *out_handle)
                     binder_free_buffer(fd, reply.data.ptr.buffer);
                 }
 
+                return -1;
+            } else if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY) {
+                fprintf(stderr, "getService got failure reply cmd=0x%08x\n", rcmd);
                 return -1;
             } else if (rcmd == BR_NOOP || rcmd == BR_TRANSACTION_COMPLETE) {
                 continue;
