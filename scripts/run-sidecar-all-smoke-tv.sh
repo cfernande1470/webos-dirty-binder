@@ -47,4 +47,7 @@ echo "== Android-like service smoke =="
 echo "== Android-like lifecycle smoke =="
 ./scripts/run-android-like-lifecycle-smoke-tv.sh
 
+echo "== Android-like restart recovery smoke =="
+./scripts/run-android-like-restart-recovery-smoke-tv.sh
+
 echo "ALL_SIDECAR_SMOKE_OK"
