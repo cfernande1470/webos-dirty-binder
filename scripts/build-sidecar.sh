@@ -69,6 +69,6 @@ ls -lh build/aosp_sm_probe_static
 echo "== build libbinder_lite_client =="
 LITE_CXX="${CXX:-aarch64-linux-gnu-g++}"
 LITE_UAPI="-Ibuild/uapi-compat -Ibuild/linux-4.4.84/arch/arm64/include/uapi -Ibuild/linux-4.4.84/arch/arm64/include/generated/uapi -Ibuild/linux-4.4.84/include/uapi -Ibuild/linux-4.4.84/include/generated/uapi"
-"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -o build/libbinder_lite_client_static tools/libbinder_lite_client.cpp
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/libbinder_lite_client_static tools/libbinder_lite.cpp tools/libbinder_lite_client.cpp
 file build/libbinder_lite_client_static
 ls -lh build/libbinder_lite_client_static
