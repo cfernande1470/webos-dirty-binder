@@ -21,6 +21,7 @@
 #define PAYLOAD_LEN 1024
 
 #define AOSP_SM_DESCRIPTOR "android.os.IServiceManager"
+#define AOSP_SM_GET_SERVICE_TRANSACTION 1U
 #define AOSP_SM_CHECK_SERVICE_TRANSACTION 2U
 #define AOSP_SM_LIST_SERVICES_TRANSACTION 4U
 
@@ -582,6 +583,138 @@ static int aosp_check_service(int fd, const char *name, uint32_t *out_handle)
     }
 }
 
+static int aosp_get_service(int fd, const char *name, uint32_t *out_handle)
+{
+    uint8_t parcel[512];
+    size_t parcel_size = 0;
+    uint8_t writebuf[1024];
+    uint8_t readbuf[8192];
+    uint8_t *p = writebuf;
+    uint32_t cmd;
+    struct binder_transaction_data tr;
+    int first = 1;
+
+    if (parcel_write_i32(parcel, sizeof(parcel), &parcel_size, 0) != 0 ||
+        parcel_write_string16_ascii(parcel, sizeof(parcel), &parcel_size, AOSP_SM_DESCRIPTOR) != 0 ||
+        parcel_write_string16_ascii(parcel, sizeof(parcel), &parcel_size, name) != 0) {
+        fprintf(stderr, "failed to build AOSP Parcel\n");
+        return -1;
+    }
+
+    memset(&tr, 0, sizeof(tr));
+    tr.target.handle = 0;
+    tr.code = AOSP_SM_GET_SERVICE_TRANSACTION;
+    tr.flags = TF_ACCEPT_FDS;
+    tr.data_size = parcel_size;
+    tr.offsets_size = 0;
+    tr.data.ptr.buffer = (binder_uintptr_t)parcel;
+    tr.data.ptr.offsets = 0;
+
+    cmd = BC_TRANSACTION;
+    append_u32(&p, cmd);
+    append_bytes(&p, &tr, sizeof(tr));
+
+    for (;;) {
+        int n;
+        uint8_t *ptr;
+        uint8_t *end;
+
+        if (first) {
+            n = binder_write_read(fd,
+                                  writebuf,
+                                  (size_t)(p - writebuf),
+                                  readbuf,
+                                  sizeof(readbuf),
+                                  "aosp getService call");
+            first = 0;
+        } else {
+            n = binder_write_read(fd,
+                                  NULL,
+                                  0,
+                                  readbuf,
+                                  sizeof(readbuf),
+                                  "aosp getService wait");
+        }
+
+        if (n < 0)
+            return -1;
+
+        ptr = readbuf;
+        end = readbuf + n;
+
+        while (ptr + sizeof(uint32_t) <= end) {
+            uint32_t rcmd;
+
+            memcpy(&rcmd, ptr, sizeof(rcmd));
+            ptr += sizeof(rcmd);
+
+            printf("aosp getService got %s 0x%08x\n", cmd_name(rcmd), rcmd);
+
+            if (rcmd == BR_REPLY) {
+                struct binder_transaction_data reply;
+                uint32_t handle;
+
+                if (ptr + sizeof(reply) > end)
+                    return -1;
+
+                memcpy(&reply, ptr, sizeof(reply));
+                ptr += sizeof(reply);
+
+                handle = first_handle_from_transaction(&reply);
+
+                if (!handle) {
+                    if (reply.data.ptr.buffer)
+                        binder_free_buffer(fd, reply.data.ptr.buffer);
+
+                    fprintf(stderr, "AOSP getService returned null handle for %s\n", name);
+                    return 1;
+                }
+
+                /*
+                 * Important: acquire the returned handle before freeing the
+                 * Binder reply buffer. This matches the working echo_client
+                 * flow and prevents the returned reference from disappearing
+                 * before the probe can transact on it.
+                 */
+                if (binder_send_handle_cmd(fd,
+                                           BC_ACQUIRE,
+                                           handle,
+                                           "aosp getService BC_ACQUIRE returned handle") != 0) {
+                    if (reply.data.ptr.buffer)
+                        binder_free_buffer(fd, reply.data.ptr.buffer);
+                    return -1;
+                }
+
+                if (reply.data.ptr.buffer)
+                    binder_free_buffer(fd, reply.data.ptr.buffer);
+
+                *out_handle = handle;
+                return 0;
+            }
+
+            if (rcmd == BR_NOOP || rcmd == BR_TRANSACTION_COMPLETE)
+                continue;
+
+            if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY) {
+                fprintf(stderr, "aosp getService failed cmd=0x%08x\n", rcmd);
+                return 1;
+            }
+
+            if (rcmd == BR_INCREFS ||
+                rcmd == BR_ACQUIRE ||
+                rcmd == BR_RELEASE ||
+                rcmd == BR_DECREFS) {
+                if (handle_ref_cmd(fd, rcmd, &ptr, end, "aosp getService") != 0)
+                    return -1;
+                continue;
+            }
+
+            fprintf(stderr, "aosp getService unhandled cmd=0x%08x\n", rcmd);
+            return -1;
+        }
+    }
+}
+
 static int call_echo_handle(int fd, uint32_t handle)
 {
     const char payload[] = "hello from AOSP SM probe";
@@ -713,6 +846,22 @@ int main(int argc, char **argv)
 
     if (call_echo_handle(fd, handle) != 0)
         return 1;
+
+    printf("AOSP_CHECK_SERVICE_OK\n");
+
+    handle = 0;
+
+    printf("AOSP getService name=%s\n", name);
+
+    if (aosp_get_service(fd, name, &handle) != 0)
+        return 1;
+
+    printf("AOSP getService got handle=%u\n", handle);
+
+    if (call_echo_handle(fd, handle) != 0)
+        return 1;
+
+    printf("AOSP_GET_SERVICE_OK\n");
 
     printf("AOSP_SM_COMPAT_OK\n");
     return 0;
