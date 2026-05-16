@@ -60,4 +60,5 @@ echo "== Android-like concurrent lifecycle smoke =="
 ./scripts/run-android-like-concurrent-lifecycle-smoke-tv.sh
 
 echo "BINDER_LIFECYCLE_V0_OK"
+echo "BINDER_DEATH_NOTIFICATION_V0_OK"
 echo "ALL_SIDECAR_SMOKE_OK"
