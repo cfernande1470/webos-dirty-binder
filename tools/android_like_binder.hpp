@@ -111,6 +111,12 @@ public:
     }
 
         int releaseHandle() const { return binder_.releaseHandle(); }
+        int linkToDeath(uintptr_t cookie) const { return binder_.linkToDeath(cookie); }
+        int unlinkToDeath(uintptr_t cookie) const { return binder_.unlinkToDeath(cookie); }
+        int waitForDeathNotification(uintptr_t expected_cookie, int timeout_sec) const
+        {
+            return binder_.waitForDeathNotification(expected_cookie, timeout_sec);
+        }
 int transact(uint32_t code, const Parcel &data, Parcel *reply) const {
         return binder_.transact(code,
                                 data.lite(),

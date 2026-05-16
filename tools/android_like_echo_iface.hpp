@@ -135,6 +135,12 @@ public:
     virtual ~IEchoService() {}
     virtual int echoText(const char *message, char *out, size_t out_len) = 0;
     virtual int releaseRemote() { return 0; }
+    virtual int waitForRemoteDeath(uintptr_t cookie, int timeout_sec)
+    {
+        (void)cookie;
+        (void)timeout_sec;
+        return -1;
+    }
 };
 
 class BpEchoService : public IEchoService {
@@ -191,6 +197,16 @@ public:
         }
 
         return remote_->releaseHandle();
+    }
+
+    int waitForRemoteDeath(uintptr_t cookie, int timeout_sec) override
+    {
+        if (!remote_) {
+            fprintf(stderr, "Android-like BpEchoService waitForRemoteDeath invalid remote\n");
+            return -1;
+        }
+
+        return remote_->waitForDeathNotification(cookie, timeout_sec);
     }
 
 private:

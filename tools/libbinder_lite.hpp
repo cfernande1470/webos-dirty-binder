@@ -53,6 +53,9 @@ public:
     int transact(uint32_t code, const Parcel &data, Parcel *reply) const;
     int transactEcho() const;
     int releaseHandle() const;
+    int linkToDeath(uintptr_t cookie) const;
+    int unlinkToDeath(uintptr_t cookie) const;
+    int waitForDeathNotification(uintptr_t expected_cookie, int timeout_sec) const;
 
 private:
     int fd_;

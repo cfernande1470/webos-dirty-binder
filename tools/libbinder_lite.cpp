@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <poll.h>
 #include <linux/android/binder.h>
 
 #define BINDER_DEVICE "/dev/binder"
@@ -54,6 +55,14 @@ static size_t align4(size_t n)
     return (n + 3U) & ~3U;
 }
 
+#ifndef BC_REQUEST_DEATH_NOTIFICATION_RAW_COMPAT
+#define BC_REQUEST_DEATH_NOTIFICATION_RAW_COMPAT 0x400c630eU
+#endif
+
+#ifndef BC_CLEAR_DEATH_NOTIFICATION_RAW_COMPAT
+#define BC_CLEAR_DEATH_NOTIFICATION_RAW_COMPAT 0x400c630fU
+#endif
+
 static const char *cmd_name(uint32_t cmd)
 {
     switch (cmd) {
@@ -66,6 +75,8 @@ static const char *cmd_name(uint32_t cmd)
     case BR_RELEASE: return "BR_RELEASE";
     case BR_DECREFS: return "BR_DECREFS";
     case BR_DEAD_REPLY: return "BR_DEAD_REPLY";
+    case BR_DEAD_BINDER: return "BR_DEAD_BINDER";
+    case BR_CLEAR_DEATH_NOTIFICATION_DONE: return "BR_CLEAR_DEATH_NOTIFICATION_DONE";
     case BR_FAILED_REPLY: return "BR_FAILED_REPLY";
     default: return "UNKNOWN";
     }
@@ -161,6 +172,70 @@ static int binder_send_handle_cmd(int fd, uint32_t cmd, uint32_t handle, const c
     append_u32(&p, handle);
 
     printf("%s: cmd=0x%08x handle=%u\n", tag, cmd, handle);
+
+    return binder_write_read(fd,
+                             writebuf,
+                             (size_t)(p - writebuf),
+                             NULL,
+                             0,
+                             tag) < 0 ? -1 : 0;
+}
+
+
+static int binder_send_handle_cookie_cmd(int fd,
+                                         uint32_t cmd,
+                                         uint32_t handle,
+                                         binder_uintptr_t cookie,
+                                         const char *tag)
+{
+    uint8_t writebuf[128];
+    uint8_t *p = writebuf;
+    uint32_t wire_cmd = cmd;
+
+    /*
+     * LG webOS / this 4.4 binder ABI accepts the old/raw death-notification
+     * wire form: command + u32 handle + u64 cookie, total write_size=16.
+     * The padded aarch64 struct binder_handle_cookie form produces
+     * cmd=0x4010630e and write_size=20, which this kernel rejects with EINVAL.
+     */
+    if (cmd == BC_REQUEST_DEATH_NOTIFICATION)
+        wire_cmd = BC_REQUEST_DEATH_NOTIFICATION_RAW_COMPAT;
+    else if (cmd == BC_CLEAR_DEATH_NOTIFICATION)
+        wire_cmd = BC_CLEAR_DEATH_NOTIFICATION_RAW_COMPAT;
+
+    append_u32(&p, wire_cmd);
+    append_u32(&p, handle);
+    append_bytes(&p, &cookie, sizeof(cookie));
+
+    printf("%s: cmd=0x%08x handle=%u cookie=0x%" PRIx64 "\n",
+           tag,
+           wire_cmd,
+           handle,
+           (uint64_t)cookie);
+
+    return binder_write_read(fd,
+                             writebuf,
+                             (size_t)(p - writebuf),
+                             NULL,
+                             0,
+                             tag) < 0 ? -1 : 0;
+}
+
+static int binder_send_dead_binder_done(int fd,
+                                        binder_uintptr_t cookie,
+                                        const char *tag)
+{
+    uint8_t writebuf[64];
+    uint8_t *p = writebuf;
+    uint32_t cmd = BC_DEAD_BINDER_DONE;
+
+    append_u32(&p, cmd);
+    append_bytes(&p, &cookie, sizeof(cookie));
+
+    printf("%s: cmd=0x%08x cookie=0x%" PRIx64 "\n",
+           tag,
+           cmd,
+           (uint64_t)cookie);
 
     return binder_write_read(fd,
                              writebuf,
@@ -1175,6 +1250,186 @@ uint32_t BpBinder::handle() const
     return handle_;
 }
 
+
+
+int BpBinder::linkToDeath(uintptr_t cookie) const
+{
+    if (fd_ < 0 || handle_ == 0) {
+        fprintf(stderr,
+                "libbinder-lite linkToDeath invalid binder fd=%d handle=%u\n",
+                fd_,
+                handle_);
+        return -1;
+    }
+
+    if (binder_send_handle_cookie_cmd(fd_,
+                                      BC_REQUEST_DEATH_NOTIFICATION,
+                                      handle_,
+                                      (binder_uintptr_t)cookie,
+                                      "libbinder-lite BC_REQUEST_DEATH_NOTIFICATION") != 0)
+        return -1;
+
+    printf("ANDROID_LIKE_LINK_TO_DEATH_OK handle=%u cookie=0x%" PRIx64 "\n",
+           handle_,
+           (uint64_t)cookie);
+    return 0;
+}
+
+int BpBinder::unlinkToDeath(uintptr_t cookie) const
+{
+    if (fd_ < 0 || handle_ == 0) {
+        fprintf(stderr,
+                "libbinder-lite unlinkToDeath invalid binder fd=%d handle=%u\n",
+                fd_,
+                handle_);
+        return -1;
+    }
+
+    if (binder_send_handle_cookie_cmd(fd_,
+                                      BC_CLEAR_DEATH_NOTIFICATION,
+                                      handle_,
+                                      (binder_uintptr_t)cookie,
+                                      "libbinder-lite BC_CLEAR_DEATH_NOTIFICATION") != 0)
+        return -1;
+
+    printf("ANDROID_LIKE_UNLINK_TO_DEATH_OK handle=%u cookie=0x%" PRIx64 "\n",
+           handle_,
+           (uint64_t)cookie);
+    return 0;
+}
+
+int BpBinder::waitForDeathNotification(uintptr_t expected_cookie,
+                                       int timeout_sec) const
+{
+    uint8_t readbuf[8192];
+    int timeout_ms = timeout_sec <= 0 ? -1 : timeout_sec * 1000;
+
+    if (fd_ < 0) {
+        fprintf(stderr, "libbinder-lite waitForDeathNotification invalid fd=%d\n", fd_);
+        return -1;
+    }
+
+    for (;;) {
+        struct pollfd pfd;
+        int prc;
+        int n;
+        uint8_t *ptr;
+        uint8_t *end;
+
+        memset(&pfd, 0, sizeof(pfd));
+        pfd.fd = fd_;
+        pfd.events = POLLIN;
+
+        prc = poll(&pfd, 1, timeout_ms);
+        if (prc == 0) {
+            fprintf(stderr,
+                    "libbinder-lite waitForDeathNotification timeout cookie=0x%" PRIx64 "\n",
+                    (uint64_t)expected_cookie);
+            return 2;
+        }
+
+        if (prc < 0) {
+            if (errno == EINTR)
+                continue;
+            perror("libbinder-lite waitForDeathNotification poll");
+            return -1;
+        }
+
+        n = binder_write_read(fd_,
+                              NULL,
+                              0,
+                              readbuf,
+                              sizeof(readbuf),
+                              "libbinder-lite wait death notification");
+        if (n < 0)
+            return -1;
+
+        ptr = readbuf;
+        end = readbuf + n;
+
+        while (ptr + sizeof(uint32_t) <= end) {
+            uint32_t rcmd;
+
+            memcpy(&rcmd, ptr, sizeof(rcmd));
+            ptr += sizeof(rcmd);
+
+            printf("libbinder-lite wait death got %s 0x%08x\n",
+                   cmd_name(rcmd),
+                   rcmd);
+
+            if (rcmd == BR_DEAD_BINDER) {
+                binder_uintptr_t cookie;
+
+                if (ptr + sizeof(cookie) > end) {
+                    fprintf(stderr, "libbinder-lite truncated BR_DEAD_BINDER\n");
+                    return -1;
+                }
+
+                memcpy(&cookie, ptr, sizeof(cookie));
+                ptr += sizeof(cookie);
+
+                printf("ANDROID_LIKE_DEATH_NOTIFICATION_RECEIVED_OK cookie=0x%" PRIx64 "\n",
+                       (uint64_t)cookie);
+
+                if ((uintptr_t)cookie != expected_cookie) {
+                    fprintf(stderr,
+                            "libbinder-lite death cookie mismatch expected=0x%" PRIx64
+                            " got=0x%" PRIx64 "\n",
+                            (uint64_t)expected_cookie,
+                            (uint64_t)cookie);
+                    return 1;
+                }
+
+                if (binder_send_dead_binder_done(fd_,
+                                                 cookie,
+                                                 "libbinder-lite BC_DEAD_BINDER_DONE") != 0)
+                    return -1;
+
+                printf("ANDROID_LIKE_DEAD_BINDER_DONE_OK cookie=0x%" PRIx64 "\n",
+                       (uint64_t)cookie);
+                return 0;
+            }
+
+            if (rcmd == BR_NOOP || rcmd == BR_TRANSACTION_COMPLETE)
+                continue;
+
+            if (rcmd == BR_CLEAR_DEATH_NOTIFICATION_DONE) {
+                binder_uintptr_t cookie;
+
+                if (ptr + sizeof(cookie) > end) {
+                    fprintf(stderr,
+                            "libbinder-lite truncated BR_CLEAR_DEATH_NOTIFICATION_DONE\n");
+                    return -1;
+                }
+
+                memcpy(&cookie, ptr, sizeof(cookie));
+                ptr += sizeof(cookie);
+                printf("libbinder-lite clear death done cookie=0x%" PRIx64 "\n",
+                       (uint64_t)cookie);
+                continue;
+            }
+
+            if (rcmd == BR_INCREFS || rcmd == BR_ACQUIRE ||
+                rcmd == BR_RELEASE || rcmd == BR_DECREFS) {
+                if (handle_ref_cmd(fd_, rcmd, &ptr, end, "libbinder-lite wait death") != 0)
+                    return -1;
+                continue;
+            }
+
+            if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY) {
+                fprintf(stderr,
+                        "libbinder-lite wait death got failure cmd=0x%08x\n",
+                        rcmd);
+                return 1;
+            }
+
+            fprintf(stderr,
+                    "libbinder-lite wait death unhandled cmd=0x%08x\n",
+                    rcmd);
+            return -1;
+        }
+    }
+}
 
 int BpBinder::releaseHandle() const
 {
