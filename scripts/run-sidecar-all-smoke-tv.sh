@@ -50,4 +50,7 @@ echo "== Android-like lifecycle smoke =="
 echo "== Android-like restart recovery smoke =="
 ./scripts/run-android-like-restart-recovery-smoke-tv.sh
 
+echo "== Android-like concurrent lifecycle smoke =="
+./scripts/run-android-like-concurrent-lifecycle-smoke-tv.sh
+
 echo "ALL_SIDECAR_SMOKE_OK"
