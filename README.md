@@ -1,281 +1,245 @@
 # webos-dirty-binder
 
-Experimental Android Binder IPC module and Binder sidecar for rooted LG webOS TVs.
+Experimental Android Binder IPC sidecar for LG webOS TVs.
 
-This repository explores whether Android Binder IPC can be built, loaded, and used on LG webOS TV kernels as an out-of-tree module, without replacing the TV boot chain or overwriting system partitions.
+This project builds and loads a modified Android Binder kernel module on a real LG webOS TV, then runs a small Binder-based sidecar userspace consisting of:
 
-> **Status:** experimental research / proof of concept.  
-> **Do not install this module at boot yet.** Load it manually while testing.
+- a mini Binder service manager
+- an echo service
+- an echo client
+- a `listServices` client
+- reproducible smoke tests for Binder transactions, service registration, death notifications, service replacement, context-manager restart, and stress calls
+
+The current milestone is:
+
+> **Binder IPC is working on LG webOS with a reproducible sidecar test suite.**
+
+This is not Android TV, Waydroid, or Anbox yet. It is a validated Binder IPC foundation running directly on webOS.
+
+---
+
+## Target tested
+
+Validated on:
+
+```text
+Device: LG webOS TV
+Kernel: 4.4.84-229.1.kavir.2
+Arch: aarch64
+Binder protocol: 8
+TV SSH: root@192.168.2.121
+Build host: NanoPi R3S / Ubuntu 24.04.4 LTS / aarch64
+Project path on build host: ~/disk/webos-dirty-binder
+```
+
+Observed kernel:
+
+```text
+Linux LGwebOSTV 4.4.84-229.1.kavir.2 #1 SMP PREEMPT Mon Jan 17 08:08:42 UTC 2022 aarch64 GNU/Linux
+Linux version 4.4.84-229.1.kavir.2 (oe-user@oe-host) (gcc version 8.2.0 (GCC) ) #1 SMP PREEMPT Mon Jan 17 08:08:42 UTC 2022
+```
+
+Observed Binder device:
+
+```text
+/dev/binder
+major 10, minor 53
+```
+
+On this target, only `/dev/binder` is created. `/dev/hwbinder` and `/dev/vndbinder` are not currently present.
 
 ---
 
 ## Current status
 
-The project now demonstrates a working Binder IPC stack on the tested LG webOS TV target.
+Confirmed working:
 
-Confirmed:
+- Binder module builds for LG webOS kernel `4.4.84-229.1.kavir.2`
+- module loads on TV with exact vermagic
+- `/dev/binder` appears as misc device
+- `BINDER_VERSION` returns Binder protocol `8`
+- `BINDER_SET_MAX_THREADS` works
+- `BINDER_SET_CONTEXT_MGR` works
+- Binder mmap path works through the experimental allocation shim
+- basic `BC_TRANSACTION` / `BR_TRANSACTION` works
+- `BR_REPLY` works
+- Binder object passing works
+- `BINDER_TYPE_BINDER` to `BINDER_TYPE_HANDLE` works
+- `BC_INCREFS_DONE` and `BC_ACQUIRE_DONE` work
+- service handle acquisition works
+- death notifications work
+- `BR_DEAD_BINDER_RAW` is handled
+- `BC_DEAD_BINDER_DONE` is sent
+- `BR_DEAD_REPLY` is observed when the context manager is gone
+- mini service manager works
+- `addService` works
+- `getService` works
+- `listServices` works
+- service replacement by duplicate name works
+- service death cleanup works
+- replacement service survives death of the old replaced service
+- context manager restart works
+- repeated service rebind works
+- multi-service registry works
+- concurrent stress calls work
+- full TV quick check passes
 
-- Binder kernel module loads successfully.
-- `/dev/binder` is created.
-- Basic Binder ioctls work.
-- Binder mmap works through an allocation shim.
-- A process can become Binder context manager.
-- Plain synchronous Binder transactions work.
-- Binder objects can be passed between processes.
-- Binder callbacks work.
-- A sidecar service manager works from internal storage.
-- A service can register itself by name.
-- A client can resolve that service by name.
-- A client can call the service through the returned Binder handle.
-- Service handles are acquired by the service manager before being stored.
-- Returned service handles are acquired by the client before freeing the reply buffer.
-- Binder death notifications now work on the tested LG/webOS Binder 4.4 target by using the raw death-notification request encoding.
-- Dead services are removed eagerly from the sidecar registry when Binder reports service death.
-- Lazy cleanup remains available as a defensive fallback.
-
-Latest important milestones:
-
-```text
-plain Binder transaction OK
-Binder object passing OK
-Binder callback OK
-mini service manager OK
-addService/getService/call OK
-raw Binder death notification request OK
-BR_DEAD_BINDER_RAW delivery OK
-BC_DEAD_BINDER_DONE acknowledgement OK
-eager service registry cleanup on death OK
-lazy stale-handle cleanup fallback OK
-```
-
-Latest successful death-notification smoke test:
+Latest full validation:
 
 ```text
-BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: cmd=0x400c630e handle=1 cookie=0x4a1988
-BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: write_consumed=16 read_consumed=0
-sm-server got BR_DEAD_BINDER_RAW 0x8008720f
-sm-server death/clear cmd=0x8008720f cookie=0x4a1988
-sm-server: service died name=test.echo handle=1 cookie=0x4a1988
-BC_DEAD_BINDER_DONE: cmd=0x40086310 cookie=0x4a1988
-BC_DEAD_BINDER_DONE: write_consumed=12 read_consumed=0
-sm-server: getService name=test.echo handle=0
-getService text reply status=1 text=NOT FOUND
-echo-client: getService failed for test.echo
+DUPLICATE_SMOKE_OK
+ALL_SIDECAR_SMOKE_OK
+QUICK_CHECK_TV_OK
 ```
-
-`echo-client: getService failed for test.echo` is expected after the service is killed. It means the service manager no longer returns a stale handle.
 
 ---
 
-## Tested target
+## Safety notes
 
-Known working target:
+This is a kernel/module research project for your own device.
 
-```text
-Device family: LG webOS TV
-Kernel: 4.4.84-229.1.kavir.2
-Architecture: arm64 / aarch64
-Binder protocol: 8
-Binder devices observed: /dev/binder
-hwbinder: not present on tested target
-vndbinder: not present on tested target
+Important notes:
+
+- The Binder module is loaded manually.
+- The module is effectively permanent until reboot on this target.
+- Do not load random kernel modules on devices you cannot recover.
+- Do not write to LG system partitions unless you fully understand the recovery path.
+- The current Binder mmap allocation shim is experimental and verbose.
+- Reboot the TV after kernel Oops, failed module experiments, or unexpected Binder state.
+- Treat `/tmp` and `/media/internal/android-sidecar` deployment as disposable.
+
+Recommended workflow:
+
+```sh
+# TV reboot after serious kernel-side failures
+ssh root@192.168.2.121 'sync; reboot'
 ```
-
-Original development target:
-
-```text
-LG OLED C1 webOS TV
-webOS TV 6.2.0
-O20 platform
-```
-
-Other LG webOS versions may require different kernel symbols, configs, offsets, command packing, or patches.
-
----
-
-## What this project is
-
-This is a Binder IPC research project for webOS.
-
-It currently provides:
-
-- A dirty Binder kernel module for LG webOS.
-- A Binder mmap allocation shim.
-- Low-level Binder probes.
-- A Binder transaction test tool.
-- Binder object passing tests.
-- Binder callback tests.
-- A small Binder sidecar service manager.
-- An echo service and echo client using Binder handles.
-- Service registration through `addService`.
-- Service lookup through `getService`.
-- Binder death notification cleanup.
-- Lazy stale-handle cleanup as fallback.
-
-It is useful for:
-
-- Understanding Binder IPC outside Android.
-- Testing Binder transactions on webOS.
-- Testing Binder object lifetime rules.
-- Experimenting with service registration and lookup.
-- Building a possible Binder-to-webOS bridge.
-- Preparing future Android-native userspace experiments.
-
----
-
-## What this project is not
-
-This is **not**:
-
-- Android TV for LG webOS.
-- Waydroid for LG webOS.
-- Anbox for LG webOS.
-- APK app support.
-- A complete Android userspace.
-- A graphics/audio/input compatibility layer.
-- A production-ready module.
-- A boot-time service.
-
-The project does **not** currently provide:
-
-- `ashmem`
-- `binderfs`
-- Android `init`
-- Android `servicemanager`
-- Android `zygote`
-- ART
-- `system_server`
-- PackageManager
-- SurfaceFlinger
-- AudioFlinger
-- InputFlinger
-- Android HALs
-- SELinux policy
-- APK installation support
-
----
-
-## Safety warning
-
-This project loads an out-of-tree kernel module on a TV. A bad Binder transaction can crash the kernel.
-
-Recommended safety rules:
-
-- Load the module only manually while testing.
-- Keep the sidecar under internal user storage, not system partitions.
-- Do not install into boot scripts yet.
-- Do not modify `kernel`, `rootfs`, `tvservice`, recovery, boot, or other system partitions.
-- Reboot after a kernel Oops before continuing.
-- Keep SSH access working.
-- Keep the TV on a trusted LAN.
-- Do not expose SSH or Binder experiments to the internet.
-- Treat every Binder parser change as potentially kernel-crashing until tested.
 
 ---
 
 ## Repository layout
 
-Common files:
+Important paths:
 
 ```text
-scripts/build-module.sh
-    Build the dirty Binder kernel module.
+artifacts/
+  binder-dirty-lgc1-o20-4.4.84-229.1.kavir.2.ko
 
-scripts/load-binder-tv.sh
-    Load Binder on the TV.
+build/
+  binder_probe_static
+  binder_ping_static
+  sidecar_binder_static
+  mini_servicemgr_static
+  echo_service_static
+  echo_client_static
+  list_services_static
 
-scripts/build-probe.sh
-    Build the basic Binder probe.
-
-scripts/build-ping.sh
-    Build Binder transaction/object/callback tests.
-
-scripts/build-sidecar.sh
-    Build sidecar service manager tools.
-
-scripts/install-sidecar-tv.sh
-    Install sidecar files to the TV.
-
-scripts/run-sidecar-smoke-tv.sh
-    Run the sidecar smoke test on the TV.
-
-scripts/run-sidecar-death-smoke-tv.sh
-    Test Binder death notification behavior.
-
-scripts/run-sidecar-lazy-cleanup-tv.sh
-    Test lazy cleanup of stale handles.
-
-tools/binder_probe.c
-    Basic Binder ioctl probe.
-
-tools/binder_ping.c
-    Low-level Binder transaction/object/callback tests.
-
-tools/sidecar_binder.c
-    Mini service manager, echo service, and echo client.
+build/linux-4.4.84/
+  LG kernel tree used to build binder.ko
 
 patches/
-    Kernel/module patches.
+  Binder / LG kernel integration patches
 
-artifacts/
-    Built module artifacts.
+scripts/
+  build-module.sh
+  build-probe.sh
+  build-ping.sh
+  build-sidecar.sh
+  install-sidecar-tv.sh
+  load-binder-tv.sh
+  run-sidecar-smoke-tv.sh
+  run-sidecar-list-smoke-tv.sh
+  run-sidecar-death-smoke-tv.sh
+  run-sidecar-multiservice-smoke-tv.sh
+  run-sidecar-stress-smoke-tv.sh
+  run-sidecar-rebind-smoke-tv.sh
+  run-sidecar-context-restart-smoke-tv.sh
+  run-sidecar-duplicate-smoke-tv.sh
+  run-sidecar-all-smoke-tv.sh
+  quick-check-tv.sh
 
-docs/
-    Notes and milestone documentation.
+tools/
+  binder_probe.c
+  binder_ping.c
+  sidecar_binder.c
 ```
-
-Generated files under `build/` should normally not be committed.
-
-Backup files such as `*.bak`, temporary patch scripts, and local test artifacts should normally not be committed unless intentionally preserved.
 
 ---
 
-## Build prerequisites
+## Build requirements
 
-On the build host, install an aarch64 cross compiler.
+The build host used for validation was a NanoPi R3S running Ubuntu 24.04.4 LTS on aarch64.
 
-Example on Ubuntu/Debian:
+Required tools include:
 
-```bash
+```sh
 sudo apt update
-sudo apt install -y build-essential gcc-aarch64-linux-gnu git python3
+sudo apt install -y \
+  build-essential \
+  gcc-aarch64-linux-gnu \
+  make \
+  git \
+  bc \
+  bison \
+  flex \
+  libssl-dev \
+  dwarves \
+  rsync \
+  file
 ```
 
-The tested build host was a NanoPi running Ubuntu 24.04 on arm64.
+The sidecar and test tools are built as static aarch64 binaries.
 
 ---
 
-## Build Binder module
+## Build the Binder module
 
-From the repository root:
+From the project directory:
 
-```bash
+```sh
 cd ~/disk/webos-dirty-binder
 ./scripts/build-module.sh
 ```
 
-Expected module:
+Expected output includes:
 
 ```text
-build/linux-4.4.84/drivers/android/binder.ko
+vermagic: 4.4.84-229.1.kavir.2 SMP preempt mod_unload aarch64
+OK: no known non-exported Binder symbols remain
+Build completed: artifacts/binder-dirty-lgc1-o20-4.4.84-229.1.kavir.2.ko
 ```
+
+The build script:
+
+- resets the kernel tree
+- applies the LG config
+- applies the webOS dirty Binder patch
+- injects the Binder mmap allocation shim
+- configures Binder as a module
+- patches incompatible kernel API usage where needed
+- builds `drivers/android/binder.ko`
+- copies the result to `artifacts/`
 
 ---
 
-## Build low-level test tools
+## Build userland tools
 
 Build the basic Binder probe:
 
-```bash
-cd ~/disk/webos-dirty-binder
+```sh
 ./scripts/build-probe.sh
 ```
 
-Build the Binder transaction/object/callback tool:
+Build the Binder ping transaction tester:
 
-```bash
-cd ~/disk/webos-dirty-binder
+```sh
 ./scripts/build-ping.sh
+```
+
+Build sidecar tools:
+
+```sh
+./scripts/build-sidecar.sh
 ```
 
 Expected outputs:
@@ -283,41 +247,171 @@ Expected outputs:
 ```text
 build/binder_probe_static
 build/binder_ping_static
-```
-
----
-
-## Build sidecar tools
-
-Build the sidecar service manager, echo service, and echo client:
-
-```bash
-cd ~/disk/webos-dirty-binder
-./scripts/build-sidecar.sh
-```
-
-Expected outputs:
-
-```text
 build/sidecar_binder_static
 build/mini_servicemgr_static
 build/echo_service_static
 build/echo_client_static
+build/list_services_static
+```
+
+Important: build Binder userland tools with the project scripts, not with plain host headers.
+
+Correct:
+
+```sh
+./scripts/build-ping.sh
+```
+
+Incorrect:
+
+```sh
+gcc -O2 -static -Wall -Wextra -o build/binder_ping_static tools/binder_ping.c
+```
+
+Plain host headers can mismatch Binder UAPI structs and cause invalid Binder command streams or kernel crashes.
+
+---
+
+## Load Binder on the TV
+
+Copy the module and loader manually:
+
+```sh
+scp artifacts/binder-dirty-lgc1-o20-4.4.84-229.1.kavir.2.ko root@192.168.2.121:/tmp/binder.ko
+scp scripts/load-binder-tv.sh root@192.168.2.121:/tmp/load-binder-tv.sh
+```
+
+Load it:
+
+```sh
+ssh root@192.168.2.121 '
+  chmod +x /tmp/load-binder-tv.sh
+  /tmp/load-binder-tv.sh /tmp/binder.ko
+'
+```
+
+Expected:
+
+```text
+Loaded:
+binder 118784 0 [permanent], Live ... (O)
+ 53 binder
+crw------- 1 root root 10, 53 ... /dev/binder
+```
+
+The loader resolves non-exported symbols from `/proc/kallsyms` and passes them to `insmod`.
+
+The module parameters include symbols such as:
+
+```text
+sym_zap_page_range
+sym_put_files_struct
+sym_get_vm_area
+sym___fd_install
+sym___close_fd
+sym_map_kernel_range_noflush
+sym___lock_task_sighand
+sym_get_files_struct
+sym___alloc_fd
 ```
 
 ---
 
-## Sidecar location on TV
+## Basic Binder probe
 
-Recommended sidecar location on the tested TV:
+Copy and run:
 
-```text
-/media/internal/android-sidecar
+```sh
+scp build/binder_probe_static root@192.168.2.121:/tmp/binder_probe
+
+ssh root@192.168.2.121 '
+  chmod +x /tmp/binder_probe
+  /tmp/binder_probe
+'
 ```
 
-This is preferred over `/home/root/android-sidecar` on the tested device because `/media/internal` has more free space.
+Expected:
 
-Installed layout:
+```text
+BINDER_VERSION protocol_version=8
+BINDER_SET_MAX_THREADS ok
+```
+
+---
+
+## Basic Binder transaction ping
+
+Build with the project script:
+
+```sh
+./scripts/build-ping.sh
+```
+
+Copy:
+
+```sh
+scp build/binder_ping_static root@192.168.2.121:/tmp/binder_ping
+```
+
+Run server and client:
+
+```sh
+ssh root@192.168.2.121 '
+  chmod +x /tmp/binder_ping
+
+  rm -f /tmp/binder_ping_server.log /tmp/binder_ping_server.pid
+
+  /tmp/binder_ping server > /tmp/binder_ping_server.log 2>&1 &
+  echo $! > /tmp/binder_ping_server.pid
+
+  sleep 1
+
+  /tmp/binder_ping client
+  rc=$?
+
+  kill "$(cat /tmp/binder_ping_server.pid)" 2>/dev/null || true
+  cat /tmp/binder_ping_server.log || true
+
+  exit "$rc"
+'
+```
+
+Expected client success:
+
+```text
+client BR_TRANSACTION_COMPLETE
+client BR_REPLY code=0x0 flags=0x0
+client reply payload: PONG from webOS binder server
+```
+
+Expected server side:
+
+```text
+BINDER_SET_CONTEXT_MGR ok
+server BR_TRANSACTION code=0x50494e47
+server payload: PING from webOS binder client
+server_reply completed
+```
+
+---
+
+## Sidecar deployment
+
+Build:
+
+```sh
+./scripts/build-sidecar.sh
+```
+
+Install to the TV:
+
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/install-sidecar-tv.sh
+```
+
+Installed layout on the TV:
 
 ```text
 /media/internal/android-sidecar/
@@ -325,889 +419,564 @@ Installed layout:
     mini_servicemgr
     echo_service
     echo_client
+    list_services
   modules/
     binder.ko
   logs/
-    mini_servicemgr.log
-    echo_service.log
-    echo_client.log
   run/
-    mini_servicemgr.pid
-    echo_service.pid
-    echo_client.exit
   load-binder-tv.sh
 ```
 
-The current sidecar is small, around a few megabytes on the tested target.
+The installer copies:
 
----
-
-## Install sidecar to internal storage
-
-```bash
-cd ~/disk/webos-dirty-binder
-
-TV_IP=192.168.2.121 \
-SIDE_DIR=/media/internal/android-sidecar \
-./scripts/install-sidecar-tv.sh
+```text
+build/mini_servicemgr_static -> bin/mini_servicemgr
+build/echo_service_static    -> bin/echo_service
+build/echo_client_static     -> bin/echo_client
+build/list_services_static   -> bin/list_services
+binder.ko                    -> modules/binder.ko
+load-binder-tv.sh            -> load-binder-tv.sh
 ```
 
 ---
 
-## Run sidecar smoke test
+## Sidecar protocol
 
-From the build host:
+The sidecar uses Binder transactions to handle a small service-manager protocol.
 
-```bash
-cd ~/disk/webos-dirty-binder
+Current operation codes:
 
+```c
+SC_CODE_ADD_SERVICE    = 0x53434144U  /* SCAD */
+SC_CODE_GET_SERVICE    = 0x53434745U  /* SCGE */
+SC_CODE_LIST_SERVICES  = 0x53434c53U  /* SCLS */
+SC_CODE_ECHO           = 0x4543484fU  /* ECHO */
+SC_CODE_PING           = 0x50494e47U  /* PING */
+```
+
+Implemented flows:
+
+```text
+addService(name, binder)
+getService(name)
+listServices()
+ping service before returning handle
+echo request/reply
+death notification registration
+death notification cleanup
+duplicate service replacement
+```
+
+---
+
+## Run the basic sidecar smoke test
+
+```sh
 TV_IP=192.168.2.121 \
 SIDE_DIR=/media/internal/android-sidecar \
 ./scripts/run-sidecar-smoke-tv.sh
 ```
 
-Expected result:
+Expected:
 
 ```text
 CLIENT_EXIT=0
 echo-client reply status=0 text=echo-service reply from webOS sidecar
 ```
 
-The smoke test performs:
+This validates:
 
-```text
-1. Load binder.ko if /dev/binder does not exist.
-2. Start mini_servicemgr as Binder context manager.
-3. Start echo_service.
-4. echo_service calls addService("test.echo").
-5. mini_servicemgr stores test.echo -> handle=1.
-6. mini_servicemgr requests a death notification for the stored handle.
-7. echo_client calls getService("test.echo").
-8. mini_servicemgr returns a Binder handle.
-9. echo_client acquires the returned handle.
-10. echo_client calls the service handle.
-11. echo_service receives the transaction.
-12. echo_service replies.
-13. echo_client receives the reply and exits with 0.
-```
+- mini service manager starts as Binder context manager
+- echo service registers with `addService`
+- client gets service with `getService`
+- service handle is returned as Binder object
+- client calls service handle
+- echo service replies successfully
 
 ---
 
-## Confirmed sidecar smoke log
+## Run listServices smoke test
 
-Successful module load:
-
-```text
-Loading /media/internal/android-sidecar/modules/binder.ko
-Loaded:
-binder 118784 0 [permanent], Live 0xffffffbffc35f000 (O)
-crw------- 1 root root 10, 53 /dev/binder
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/run-sidecar-list-smoke-tv.sh
 ```
 
-Successful service registration:
+Expected:
 
 ```text
-sm-server BR_TRANSACTION code=0x53434144 sender_pid=3500 sender_euid=0 data_size=96 offsets_size=8
-object from txn: offset=72 type=0x73682a85 BINDER_TYPE_HANDLE handle=1 binder=0x1 cookie=0x0
-sm-server BC_ACQUIRE service handle: cmd=0x40046305 handle=1
-sm-server BC_ACQUIRE service handle: write_consumed=8 read_consumed=0
-BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: cmd=0x400c630e handle=1 cookie=0x4a1988
-BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: write_consumed=16 read_consumed=0
-sm-server: addService name=test.echo handle=1
-sm-server registry:
-  test.echo -> handle=1
+list-services reply status=0
+(empty)
+
+list-services reply status=0
+test.echo
+
+LIST_SMOKE_OK
 ```
 
-Successful service lookup:
+This validates:
 
-```text
-sm-server BR_TRANSACTION code=0x53434745 sender_pid=3545 sender_euid=0 data_size=72 offsets_size=0
-sm-server: getService name=test.echo handle=1
-sm-server: replying with handle=1 status=0
-sm-server getService reply: write_consumed=80 read_consumed=0
-```
-
-Successful client handle acquisition:
-
-```text
-getService got BR_REPLY 0x80407203
-object from txn: offset=8 type=0x73682a85 BINDER_TYPE_HANDLE handle=1 binder=0x1 cookie=0x0
-getService: name=test.echo got handle=1
-getService BC_ACQUIRE returned handle: cmd=0x40046305 handle=1
-getService BC_ACQUIRE returned handle: write_consumed=8 read_consumed=0
-```
-
-Successful service call:
-
-```text
-echo-client: calling handle=1 message=before service death
-echo-client got BR_REPLY 0x80407203
-echo-client reply status=0 text=echo-service reply from webOS sidecar
-```
-
-Successful service-side receive:
-
-```text
-echo-service BR_TRANSACTION code=0x4543484f sender_pid=3545 sender_euid=0 data_size=21
-echo-service request payload: before service death
-echo-service reply: write_consumed=80 read_consumed=0
-```
+- empty service registry can be listed
+- registered service appears in `listServices`
+- regular echo call still works after `listServices`
 
 ---
 
-## Binder death notifications
+## Run service death smoke test
 
-Death notifications now work on the tested LG/webOS Binder 4.4 target.
-
-The normal `BC_REQUEST_DEATH_NOTIFICATION` encoding produced:
-
-```text
-cmd=0x4010630e
-ioctl failed errno=22 (Invalid argument)
-```
-
-The working request uses the raw 12-byte command encoding:
-
-```text
-BC_REQUEST_DEATH_NOTIFICATION_RAW = 0x400c630e
-```
-
-The sidecar writes:
-
-```text
-uint32_t cmd
-uint32_t handle
-binder_uintptr_t cookie
-```
-
-On the tested arm64 target this gives:
-
-```text
-write_size=16
-```
-
-The successful request log is:
-
-```text
-BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: cmd=0x400c630e handle=1 cookie=0x4a1988
-BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: BINDER_WRITE_READ write_size=16 read_size=0
-BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: write_consumed=16 read_consumed=0
-```
-
-When the service dies, the tested Binder driver returns:
-
-```text
-BR_DEAD_BINDER_RAW = 0x8008720f
-```
-
-The sidecar handles it as a Binder death notification:
-
-```text
-sm-server got BR_DEAD_BINDER_RAW 0x8008720f
-sm-server death/clear cmd=0x8008720f cookie=0x4a1988
-sm-server: service died name=test.echo handle=1 cookie=0x4a1988
-```
-
-Then the sidecar acknowledges the death notification with:
-
-```text
-BC_DEAD_BINDER_DONE
-```
-
-Confirmed ACK log:
-
-```text
-BC_DEAD_BINDER_DONE: cmd=0x40086310 cookie=0x4a1988
-BC_DEAD_BINDER_DONE: BINDER_WRITE_READ write_size=12 read_size=0
-BC_DEAD_BINDER_DONE: write_consumed=12 read_consumed=0
-```
-
-After cleanup, `getService("test.echo")` returns `NOT FOUND` immediately:
-
-```text
-sm-server: getService name=test.echo handle=0
-sm-server get notfound reply: BINDER_WRITE_READ write_size=80 read_size=0
-getService text reply status=1 text=NOT FOUND
-echo-client: getService failed for test.echo
-```
-
-This is the expected successful behavior after service death.
-
----
-
-## Why `0x8008720f` matters
-
-The observed death return on the tested target is:
-
-```text
-0x8008720f
-```
-
-This must be treated as raw `BR_DEAD_BINDER`, not as clear-death-notification-done.
-
-Correct behavior:
-
-```text
-receive 0x8008720f
-read binder_uintptr_t cookie
-remove matching service registry entry
-send BC_DEAD_BINDER_DONE(cookie)
-```
-
-Incorrect behavior:
-
-```text
-receive 0x8008720f
-log it as unhandled
-do not remove service
-do not send BC_DEAD_BINDER_DONE
-```
-
-The old bad log was:
-
-```text
-sm-server got BR_DEAD_BINDER_RAW 0x8008720f
-sm-server unhandled cmd=0x8008720f
-```
-
-The new good log is:
-
-```text
-sm-server got BR_DEAD_BINDER_RAW 0x8008720f
-sm-server death/clear cmd=0x8008720f cookie=0x4a1988
-sm-server: service died name=test.echo handle=1 cookie=0x4a1988
-BC_DEAD_BINDER_DONE: cmd=0x40086310 cookie=0x4a1988
-```
-
----
-
-## Death notification smoke test
-
-Run:
-
-```bash
-cd ~/disk/webos-dirty-binder
-
+```sh
 TV_IP=192.168.2.121 \
 SIDE_DIR=/media/internal/android-sidecar \
 ./scripts/run-sidecar-death-smoke-tv.sh
 ```
 
-Expected high-level result:
+Expected:
 
 ```text
-BEFORE_EXIT=0
-AFTER_EXIT=1
-```
-
-`AFTER_EXIT=1` is expected because the second client runs after the service has been killed. The important part is that the failure is clean and returns `NOT FOUND`, not a stale handle.
-
-Expected flow:
-
-```text
-1. Load binder.ko if needed.
-2. Start mini_servicemgr.
-3. Start echo_service.
-4. echo_service registers test.echo.
-5. mini_servicemgr acquires the service handle.
-6. mini_servicemgr requests raw Binder death notification.
-7. Run echo_client before killing the service.
-8. Confirm service call succeeds.
-9. Kill echo_service.
-10. Binder reports BR_DEAD_BINDER_RAW to mini_servicemgr.
-11. mini_servicemgr removes test.echo from the registry by death cookie.
-12. mini_servicemgr sends BC_DEAD_BINDER_DONE.
-13. Run echo_client again.
-14. getService returns NOT FOUND.
-```
-
-Good death-cleanup log:
-
-```text
-sm-server got BR_DEAD_BINDER_RAW 0x8008720f
-sm-server death/clear cmd=0x8008720f cookie=0x4a1988
-sm-server: service died name=test.echo handle=1 cookie=0x4a1988
-BC_DEAD_BINDER_DONE: cmd=0x40086310 cookie=0x4a1988
-BC_DEAD_BINDER_DONE: write_consumed=12 read_consumed=0
-```
-
-Good after-death client result:
-
-```text
+echo-client reply status=0 text=echo-service reply from webOS sidecar
+BR_DEAD_BINDER_RAW
+sm-server: service died name=test.death
+BC_DEAD_BINDER_DONE
 getService text reply status=1 text=NOT FOUND
-echo-client: getService failed for test.echo
+DEATH_SMOKE_OK
 ```
 
-Bad signs:
+This validates:
 
-```text
-BC_REQUEST_DEATH_NOTIFICATION service handle: cmd=0x4010630e
-ioctl failed errno=22 (Invalid argument)
-```
-
-```text
-sm-server unhandled cmd=0x8008720f
-```
-
-```text
-sm-server: getService name=test.echo handle=1
-```
-
-after the service has already died.
+- service registers
+- client can call it
+- service process dies
+- Binder sends death notification
+- service manager clears registry entry
+- subsequent clients fail cleanly
 
 ---
 
-## Lazy cleanup
+## Run multiservice smoke test
 
-Lazy cleanup is no longer the primary service-death mechanism.
-
-The primary path is now:
-
-```text
-addService(name, binder)
--> acquire service handle
--> request raw Binder death notification
--> receive BR_DEAD_BINDER_RAW when service dies
--> remove registry entry by death cookie
--> send BC_DEAD_BINDER_DONE
--> future getService(name) returns NOT FOUND
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/run-sidecar-multiservice-smoke-tv.sh
 ```
 
-Lazy cleanup should still remain in the project as a defensive fallback.
-
-It protects against cases such as:
-
-- Running on a different LG/webOS kernel where the raw death request is rejected.
-- A missed or delayed death notification.
-- A parser bug in future Binder command handling.
-- A service registered before death notifications were enabled.
-- A stale entry left by an older build.
-- A race where a client asks for the service while death cleanup is still pending.
-- Manual experiments that bypass the normal addService path.
-
-Fallback behavior:
+Expected:
 
 ```text
-getService(name)
--> lookup stored handle
--> ping stored handle
--> if alive: return handle
--> if BR_DEAD_REPLY or BR_FAILED_REPLY: remove service and return NOT FOUND
+test.echo.a
+test.echo.b
+
+test.echo.b
+
+echo-client: getService failed for test.echo.a
+MULTISERVICE_SMOKE_OK
 ```
 
-Confirmed fallback log from earlier testing:
+This validates:
 
-```text
-sm-server: ping service name=test.echo handle=1
-sm-server ping got BR_DEAD_REPLY 0x00007205
-sm-server: ping service dead/failed cmd=0x00007205
-sm-server: lazy cleanup removing stale service name=test.echo handle=1
-sm-server get stale-notfound reply: write_consumed=80 read_consumed=0
-```
-
-Current policy:
-
-```text
-death notification available -> eager cleanup
-death notification missing/failing/racy -> lazy cleanup fallback
-```
-
-So lazy cleanup is not strictly necessary for the happy path anymore, but it is still worth keeping.
+- multiple services can register
+- `listServices` lists both
+- both services can be called
+- killing one service removes only that service
+- the other service stays alive and callable
 
 ---
 
-## Low-level Binder transaction test
+## Run stress smoke test
 
-Start server on the TV:
+Moderate:
 
-```bash
-cd /tmp
-./binder_ping server
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+CLIENTS=6 \
+ROUNDS=10 \
+./scripts/run-sidecar-stress-smoke-tv.sh
 ```
 
-In another SSH session:
+Heavier validated run:
 
-```bash
-cd /tmp
-./binder_ping client
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+CLIENTS=12 \
+ROUNDS=20 \
+./scripts/run-sidecar-stress-smoke-tv.sh
 ```
 
-Expected client result:
+Expected:
 
 ```text
-client BR_REPLY
-client reply payload: PONG from webOS binder server
-free_buffer: write_consumed=12 read_consumed=0
+TOTAL_CALLS=240
+FAILURES=0
+STRESS_SMOKE_OK
+```
+
+This validates repeated concurrent client calls against the same service.
+
+---
+
+## Run service rebind smoke test
+
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/run-sidecar-rebind-smoke-tv.sh
+```
+
+Expected:
+
+```text
+REBIND_SMOKE_OK
+```
+
+This validates:
+
+- a service can register
+- client can call it
+- service can die
+- registry becomes clean
+- same service name can register again
+- client can call the new instance
+- final cleanup works
+
+---
+
+## Run context-manager restart smoke test
+
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/run-sidecar-context-restart-smoke-tv.sh
+```
+
+Expected:
+
+```text
+getService got BR_DEAD_REPLY
+client_without_sm_rc=1
+CONTEXT_RESTART_SMOKE_OK
+```
+
+This validates:
+
+- client succeeds before context manager death
+- killing `mini_servicemgr` causes clients to fail cleanly
+- a new `mini_servicemgr` can become context manager
+- a new service can register
+- clients succeed again after restart
+
+---
+
+## Run duplicate service smoke test
+
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/run-sidecar-duplicate-smoke-tv.sh
+```
+
+Expected:
+
+```text
+DUPLICATE_SMOKE_OK
+```
+
+This validates duplicate-name service replacement:
+
+```text
+first service registers test.duplicate -> handle=1
+second service registers test.duplicate -> handle=2
+registry contains one entry only
+killing first service does not remove replacement
+client still succeeds through handle=2
+killing second service removes registry entry
+final getService returns NOT FOUND
+```
+
+Important bug fixed:
+
+Earlier, death notification cookies were tied to the service registry slot. When a duplicate registration replaced the old service in the same slot, the old service death could incorrectly clear the new service. This was fixed by generating unique death cookies for each service registration.
+
+Expected fixed behavior:
+
+```text
+cookie=0x53444301  old service
+cookie=0x53444302  replacement service
+
+death cookie 0x53444301 -> not found, registry remains
+death cookie 0x53444302 -> service removed
 ```
 
 ---
 
-## Binder object passing test
+## Run the full sidecar smoke suite
 
-Start object server:
-
-```bash
-cd /tmp
-./binder_ping object-server
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+CLIENTS=6 \
+ROUNDS=10 \
+./scripts/run-sidecar-all-smoke-tv.sh
 ```
 
-In another SSH session:
-
-```bash
-cd /tmp
-./binder_ping object-client
-```
-
-Expected server result:
+Expected final line:
 
 ```text
-object-server object[0]: offset=0 type=0x73682a85 BINDER_TYPE_HANDLE flags=0x00000100 binder=0x1 handle=1 cookie=0x0
+ALL_SIDECAR_SMOKE_OK
 ```
 
-This confirms:
+This runs:
 
 ```text
-client BINDER_TYPE_BINDER -> server BINDER_TYPE_HANDLE
+run-sidecar-smoke-tv.sh
+run-sidecar-list-smoke-tv.sh
+run-sidecar-death-smoke-tv.sh
+run-sidecar-multiservice-smoke-tv.sh
+run-sidecar-stress-smoke-tv.sh
+run-sidecar-rebind-smoke-tv.sh
+run-sidecar-context-restart-smoke-tv.sh
+run-sidecar-duplicate-smoke-tv.sh
 ```
 
 ---
 
-## Binder callback test
+## Run complete TV quick check
 
-The `object-server` / `object-client` flow also demonstrates callbacks.
+This is the current one-command validation path.
 
-Expected sequence:
-
-```text
-client sends BINDER_TYPE_BINDER
-server receives BINDER_TYPE_HANDLE handle=1
-server calls handle=1
-client receives callback BR_TRANSACTION
-client replies with BC_REPLY
-server receives callback BR_REPLY
-server replies to original client transaction
-client receives OBJECT OK
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+CLIENTS=6 \
+ROUNDS=10 \
+./scripts/quick-check-tv.sh
 ```
 
-Expected server fragment:
+Expected final line:
 
 ```text
-object-server calling client handle=1
-object-server callback BR_REPLY
-object-server callback reply payload: CLIENT CALLBACK OK
+QUICK_CHECK_TV_OK
 ```
 
-Expected client fragment:
+This validates:
+
+- current git status and commit
+- module build
+- probe build
+- ping build
+- sidecar build
+- sidecar install
+- standalone Binder probe
+- standalone Binder ping transaction
+- full sidecar smoke suite
+
+Latest observed success:
 
 ```text
-object-client callback transaction code=0x43424b31
-object-client callback payload: CALLBACK from object-server
-object-client callback reply write_consumed=80 read_consumed=0
-object-client reply payload: OBJECT OK
+DUPLICATE_SMOKE_OK
+ALL_SIDECAR_SMOKE_OK
+QUICK_CHECK_TV_OK
 ```
 
 ---
 
-## Important implementation notes
-
-### `task_euid(proc->tsk)` crash
-
-The stock Binder transaction path crashed on this LG webOS kernel at:
-
-```c
-t->sender_euid = task_euid(proc->tsk);
-```
-
-The observed crash was a NULL pointer dereference during `BC_TRANSACTION`.
-
-For this PoC, the module patches that path to:
-
-```c
-t->sender_euid = current_euid();
-```
-
-This keeps `sender_euid` meaningful for the userspace task issuing the ioctl and avoids the crash on the tested target.
-
-### Binder mmap allocation shim
-
-The module uses a Binder mmap allocation shim.
-
-Observed successful pattern:
-
-```text
-binder_alloc_shim: before __get_free_page
-binder_alloc_shim: after __get_free_page
-binder_alloc_shim: virt_to_page
-binder_alloc_shim: before vm_insert_page
-binder_alloc_shim: after vm_insert_page ret=0
-```
-
-### Do not ignore read data from `BC_ENTER_LOOPER`
-
-`BINDER_WRITE_READ` can return `BR_TRANSACTION` in the same ioctl that writes `BC_ENTER_LOOPER`.
-
-The server must process the read buffer returned by the enter-looper call.
-
-### `BC_FREE_BUFFER` should be write-only
-
-After receiving `BR_REPLY`, release the reply buffer using write-only `BC_FREE_BUFFER`:
-
-```c
-read_size = 0;
-read_buffer = 0;
-```
-
-Otherwise the process can block waiting for Binder work without being a looper.
-
-### Binder object refcount commands
-
-When exporting a Binder object, the owner can receive:
-
-```text
-BR_INCREFS
-BR_ACQUIRE
-```
-
-The owner must consume their `binder_ptr_cookie` payloads and respond with:
-
-```text
-BC_INCREFS_DONE
-BC_ACQUIRE_DONE
-```
-
-Otherwise the command parser desynchronizes.
-
-### Service manager handle lifetime
-
-The sidecar service manager must acquire service handles it stores:
-
-```text
-BC_ACQUIRE service handle
-```
-
-The client must also acquire a handle received through `getService()` before freeing the reply buffer:
-
-```text
-getService BC_ACQUIRE returned handle
-```
-
-Without these acquisitions, later calls can fail with:
-
-```text
-BR_FAILED_REPLY
-```
-
-### Death notification request packing
-
-The standard command constant produced the wrong request for this target:
-
-```text
-BC_REQUEST_DEATH_NOTIFICATION service handle: cmd=0x4010630e
-ioctl failed errno=22 (Invalid argument)
-```
-
-The accepted request is the raw 12-byte encoded command:
-
-```text
-0x400c630e
-```
-
-The sidecar still writes 16 bytes total on arm64 because the payload is:
-
-```text
-uint32_t cmd
-uint32_t handle
-binder_uintptr_t cookie
-```
-
-### Death notification response handling
-
-The observed response after service death is:
-
-```text
-0x8008720f
-```
-
-The sidecar treats this as raw `BR_DEAD_BINDER`.
-
-This response carries:
-
-```text
-binder_uintptr_t cookie
-```
-
-The service manager removes the registry entry whose `death_cookie` matches the received cookie and then sends:
-
-```text
-BC_DEAD_BINDER_DONE(cookie)
-```
-
-### Failure replies during getService
-
-`getService` should fail fast on:
-
-```text
-BR_DEAD_REPLY
-BR_FAILED_REPLY
-```
-
-This prevents hangs if the service manager receives a failure reply while trying to validate or return a handle.
-
----
-
-## Current capabilities
-
-Confirmed:
-
-- Binder device creation
-- Basic Binder ioctls
-- Binder mmap
-- Context manager
-- Blocking Binder server loop
-- Synchronous Binder transactions
-- Synchronous replies
-- Write-only buffer free
-- Binder object passing
-- Binder callbacks
-- Binder refcount command handling
-- Internal-storage sidecar
-- Mini service manager
-- `addService(name, binder)`
-- `getService(name) -> handle`
-- Client call through returned handle
-- Service response through Binder
-- Raw Binder death notification request
-- Raw dead-binder command handling
-- Registry removal by death cookie
-- `BC_DEAD_BINDER_DONE` acknowledgement
-- `NOT FOUND` after service death
-- Lazy cleanup fallback after `BR_DEAD_REPLY`
-
-Not yet confirmed:
-
-- `hwbinder`
-- `vndbinder`
-- Binder service manager compatibility with AOSP
-- Android `libbinder` userspace binaries
-- Android `servicemanager`
-- File descriptor transfer
-- Multiple services
-- Multiple clients
-- Full release/cleanup lifecycle
-- Stress testing
-- Android-native daemons
-- APK support
-
----
-
-## Suggested next milestones
-
-1. Add sidecar lifecycle scripts:
-
-   ```text
-   start.sh
-   stop.sh
-   status.sh
-   restart.sh
-   ```
-
-2. Add multi-service support:
-
-   ```text
-   register more than one service
-   list registered services
-   replace service by name
-   clean dead services by death cookie
-   keep lazy cleanup fallback
-   ```
-
-3. Add a cleaner service manager protocol:
-
-   ```text
-   ADD_SERVICE
-   GET_SERVICE
-   LIST_SERVICES
-   PING_SERVICE
-   REMOVE_SERVICE
-   structured status codes
-   ```
-
-4. Add file descriptor passing:
-
-   ```text
-   BINDER_TYPE_FD
-   ```
-
-5. Add stress testing:
-
-   ```text
-   repeated service registration
-   repeated lookup
-   repeated service death
-   repeated death notification ACK
-   forked clients
-   service restart loops
-   ```
-
-6. Try Android-native userspace components:
-
-   ```text
-   Android libbinder
-   Android service command
-   AOSP servicemanager
-   ```
-
-7. Prototype a Binder-to-webOS Luna Bus bridge.
+## Known limitations
+
+Current limitations:
+
+- this is not Android TV userspace
+- no Waydroid/Anbox integration yet
+- no Android `servicemanager` binary yet
+- no Android init
+- no ashmem/memfd integration layer yet
+- no SELinux integration
+- no Android graphics stack
+- no Android audio HAL
+- no Android input HAL
+- only `/dev/binder` is present on the tested TV
+- `/dev/hwbinder` and `/dev/vndbinder` are not currently created
+- Binder module remains loaded until reboot
+- Binder mmap shim is experimental
+- debug logging is very verbose
+- deployment is manual over SSH
 
 ---
 
 ## Troubleshooting
 
-### `/dev/binder` does not exist
+### `/dev/binder` missing
 
-The module is not loaded, or the TV rebooted.
+Load Binder:
 
-Load it again:
-
-```bash
-cd /media/internal/android-sidecar
-./load-binder-tv.sh modules/binder.ko
+```sh
+ssh root@192.168.2.121 '
+  /media/internal/android-sidecar/load-binder-tv.sh \
+    /media/internal/android-sidecar/modules/binder.ko
+'
 ```
 
-### `open /dev/binder: No such file or directory`
+Check:
 
-Same as above: reload the module.
-
-### `BINDER_SET_CONTEXT_MGR already set`
-
-A previous process is still holding the Binder context manager.
-
-Stop sidecar processes:
-
-```bash
-killall mini_servicemgr 2>/dev/null || true
-killall echo_service 2>/dev/null || true
-killall echo_client 2>/dev/null || true
-killall binder_ping 2>/dev/null || true
+```sh
+ssh root@192.168.2.121 'ls -l /dev/binder; grep binder /proc/misc; grep "^binder " /proc/modules'
 ```
 
-If it still fails, reboot the TV.
+### `module not found`
 
-### `BR_FAILED_REPLY` after getService
+Check install layout:
 
-Check handle lifetime.
+```sh
+ssh root@192.168.2.121 '
+  cd /media/internal/android-sidecar &&
+  find . -maxdepth 3 -type f -o -type d | sort
+'
+```
 
-The service manager must acquire the stored service handle, and the client must acquire the returned handle before freeing the reply buffer.
-
-### `BR_DEAD_REPLY` after service death
-
-This is expected if a client tries to call a dead handle directly.
-
-The sidecar avoids returning stale handles by:
+Expected module path:
 
 ```text
-primary path: death notification removes the service eagerly
-fallback path: getService pings the stored handle and lazy-cleans if dead
+/media/internal/android-sidecar/modules/binder.ko
 ```
 
-### `BC_REQUEST_DEATH_NOTIFICATION` returns `EINVAL`
+### `mini_servicemgr_static: not found`
 
-This means the normal encoded command is being used:
+The installed binary names are not the build names.
+
+Build host names:
 
 ```text
-cmd=0x4010630e
+build/mini_servicemgr_static
+build/echo_service_static
+build/echo_client_static
+build/list_services_static
 ```
 
-The sidecar should use:
+TV install names:
 
 ```text
-BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: cmd=0x400c630e
+bin/mini_servicemgr
+bin/echo_service
+bin/echo_client
+bin/list_services
 ```
 
-Rebuild and reinstall the sidecar tools.
+### Kernel Oops after Binder transaction
 
-### `sm-server unhandled cmd=0x8008720f`
+Do not compile Binder tools with arbitrary system headers. Use the project scripts:
 
-The service manager received the raw dead-binder notification but did not dispatch it.
+```sh
+./scripts/build-ping.sh
+./scripts/build-sidecar.sh
+```
 
-Expected fixed behavior:
+A previous invalid test binary compiled against mismatched host Binder UAPI headers caused a crash in `binder_thread_write`. Rebuilding with the project script and kernel `4.4.84` UAPI headers fixed the issue.
+
+### Context manager gone
+
+Clients may receive:
 
 ```text
-sm-server got BR_DEAD_BINDER_RAW 0x8008720f
-sm-server death/clear cmd=0x8008720f cookie=...
-BC_DEAD_BINDER_DONE: cmd=0x40086310 cookie=...
+BR_DEAD_REPLY
 ```
 
-If `unhandled` still appears, rebuild, reinstall, and confirm the installed `mini_servicemgr` is the newly built binary.
+This is expected if `mini_servicemgr` died. Restart the service manager and re-register services.
 
-### `echo-client: getService failed for test.echo`
+### Death cookie issues
 
-This is expected in the death smoke test after `echo_service` has been killed.
-
-Good after-death behavior:
-
-```text
-getService text reply status=1 text=NOT FOUND
-echo-client: getService failed for test.echo
-```
-
-Bad behavior would be returning a stale handle after the service died.
-
-### `scp: dest open "/tmp/binder_ping": Failure`
-
-The binary may be running or locked.
-
-```bash
-ssh root@TV_IP 'killall binder_ping 2>/dev/null || true; rm -f /tmp/binder_ping'
-scp build/binder_ping_static root@TV_IP:/tmp/binder_ping
-ssh root@TV_IP 'chmod +x /tmp/binder_ping'
-```
-
-### Kernel Oops during transaction
-
-Reboot before continuing:
-
-```bash
-ssh root@TV_IP 'sync; reboot'
-```
-
-Then verify that the loaded module includes the `current_euid()` transaction fix.
+Duplicate service replacement requires unique death cookies per registration. If old service death clears the replacement entry, check that `sidecar_binder.c` uses a monotonically increasing death-cookie sequence rather than the address of the registry slot.
 
 ---
 
-## Git workflow
+## Development workflow
 
-Recommended README update commit:
+Recommended workflow:
 
-```bash
+```sh
 cd ~/disk/webos-dirty-binder
 
-cp /path/to/README.md README.md
+./scripts/build-module.sh
+./scripts/build-probe.sh
+./scripts/build-ping.sh
+./scripts/build-sidecar.sh
 
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/install-sidecar-tv.sh
+
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+CLIENTS=6 \
+ROUNDS=10 \
+./scripts/quick-check-tv.sh
+```
+
+Commit only source/scripts unless intentionally updating artifacts:
+
+```sh
 git status --short
-git diff -- README.md
-
-git add README.md
-git commit -m "docs: update sidecar death notification status"
-git push origin main
+git add tools/sidecar_binder.c scripts/<changed-script>.sh
+git commit -m "..."
 ```
 
-Avoid committing generated files unless intentionally publishing binaries:
-
-```text
-build/
-*.o
-*.ko
-*.bak
-*.bak.*
-```
-
-If local scratch scripts are useful, keep them untracked or move them into a deliberate `tools/` or `scripts/` commit.
+Avoid accidentally committing rebuilt `.ko` artifacts unless this is intentional.
 
 ---
 
-## Disclaimer
+## Milestone summary
 
-This is experimental kernel research code.
+This milestone proves:
 
-Use at your own risk. It can crash the TV kernel. It is not intended for production use.
+```text
+LG webOS kernel 4.4.84 + dirty Binder module + minimal Binder sidecar userspace
+```
+
+can support:
+
+```text
+context manager
+service registration
+service lookup
+service listing
+Binder object passing
+synchronous calls
+death notifications
+service replacement
+context manager restart
+basic concurrent traffic
+full reproducible TV validation
+```
+
+Current final validation command:
+
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+CLIENTS=6 \
+ROUNDS=10 \
+./scripts/quick-check-tv.sh
+```
+
+Current expected success:
+
+```text
+QUICK_CHECK_TV_OK
+```
+
+---
+
+## Next technical directions
+
+Good next steps:
+
+1. reduce or gate Binder mmap shim debug noise
+2. add a service-manager protocol version command
+3. add structured status output for `listServices`
+4. add persistent sidecar launcher script
+5. add controlled restart/watchdog for `mini_servicemgr`
+6. investigate why only `/dev/binder` appears on this target
+7. evaluate a minimal Android `servicemanager` compatibility layer
+8. evaluate ashmem or memfd compatibility
+9. experiment with a minimal Android-native Binder client
+10. only after that, consider higher-level Android userspace experiments
