@@ -2,35 +2,58 @@
 
 Experimental Android Binder IPC module and Binder sidecar for rooted LG webOS TVs.
 
-This repository explores whether Android Binder IPC can be built, loaded, and used on LG webOS TV kernels as an out-of-tree module, without replacing the TV boot chain or system partitions.
+This repository explores whether Android Binder IPC can be built, loaded, and used on LG webOS TV kernels as an out-of-tree module, without replacing the TV boot chain or overwriting system partitions.
 
 > **Status:** experimental research / proof of concept.  
-> **Do not install this module at boot.** Load it manually while testing.
+> **Do not install this module at boot yet.** Load it manually while testing.
 
 ---
 
 ## Current status
 
-The project now demonstrates a working Binder IPC stack on LG webOS:
+The project now demonstrates a working Binder IPC stack on LG webOS.
+
+Confirmed on the tested LG webOS TV target:
 
 - Binder kernel module loads successfully.
 - `/dev/binder` is created.
 - Basic Binder ioctls work.
 - Binder mmap works through an allocation shim.
-- A context manager can be registered.
+- A process can become Binder context manager.
 - Plain synchronous Binder transactions work.
 - Binder objects can be passed between processes.
 - Binder callbacks work.
-- A minimal Binder sidecar service manager works from internal storage.
+- A sidecar service manager works from internal storage.
 - A service can register itself by name.
 - A client can resolve that service by name.
 - A client can call the service through the returned Binder handle.
+- Dead/stale services are detected through lazy cleanup.
 
-The latest successful sidecar smoke test returned:
+Latest important milestones:
+
+```text
+plain Binder transaction       OK
+Binder object passing          OK
+Binder callback                OK
+mini service manager           OK
+addService/getService/call     OK
+lazy stale-handle cleanup      OK
+```
+
+The latest sidecar smoke test returned:
 
 ```text
 CLIENT_EXIT=0
 echo-client reply status=0 text=echo-service reply from webOS sidecar
+```
+
+The latest lazy cleanup test returned:
+
+```text
+BEFORE_EXIT=0
+AFTER_EXIT=1
+sm-server: lazy cleanup removing stale service name=test.echo handle=1
+getService text reply status=1 text=NOT FOUND
 ```
 
 ---
@@ -54,7 +77,7 @@ webOS TV 6.2.0
 O20 platform
 ```
 
-Other LG webOS versions may need different kernel symbols, configs, offsets, or patches.
+Other LG webOS versions may require different kernel symbols, configs, offsets, or patches.
 
 ---
 
@@ -65,20 +88,23 @@ This is a Binder IPC research project for webOS.
 It currently provides:
 
 - A dirty Binder kernel module for LG webOS.
+- A Binder mmap allocation shim.
 - Low-level Binder probes.
 - A Binder transaction test tool.
 - Binder object passing tests.
 - Binder callback tests.
-- A small sidecar service manager experiment.
+- A small Binder sidecar service manager.
 - An echo service and echo client using Binder handles.
+- Lazy cleanup of stale service handles.
 
 It is useful for:
 
 - Understanding Binder IPC outside Android.
+- Testing Binder transactions on webOS.
 - Testing Binder object lifetime rules.
 - Experimenting with service registration and lookup.
 - Building a possible Binder-to-webOS bridge.
-- Preparing future experiments with Android-native userspace components.
+- Preparing future Android-native userspace experiments.
 
 ---
 
@@ -129,7 +155,7 @@ Recommended safety rules:
 - Reboot after a kernel Oops before continuing.
 - Keep SSH access working.
 - Keep the TV on a trusted LAN.
-- Do not expose these experiments to the internet.
+- Do not expose SSH or Binder experiments to the internet.
 
 ---
 
@@ -138,21 +164,23 @@ Recommended safety rules:
 Common files:
 
 ```text
-scripts/build-module.sh            Build the dirty Binder kernel module
-scripts/load-binder-tv.sh          Load Binder on the TV
-scripts/build-probe.sh             Build the basic Binder probe
-scripts/build-ping.sh              Build Binder transaction/object tests
-scripts/build-sidecar.sh           Build sidecar service manager tools
-scripts/install-sidecar-tv.sh      Install sidecar files to the TV
-scripts/run-sidecar-smoke-tv.sh    Run the sidecar smoke test on the TV
+scripts/build-module.sh                Build the dirty Binder kernel module
+scripts/load-binder-tv.sh              Load Binder on the TV
+scripts/build-probe.sh                 Build the basic Binder probe
+scripts/build-ping.sh                  Build Binder transaction/object tests
+scripts/build-sidecar.sh               Build sidecar service manager tools
+scripts/install-sidecar-tv.sh          Install sidecar files to the TV
+scripts/run-sidecar-smoke-tv.sh        Run the sidecar smoke test on the TV
+scripts/run-sidecar-death-smoke-tv.sh  Test Binder death notification behavior
+scripts/run-sidecar-lazy-cleanup-tv.sh Test lazy cleanup of stale handles
 
-tools/binder_probe.c               Basic Binder ioctl probe
-tools/binder_ping.c                Low-level Binder transaction/object/callback tests
-tools/sidecar_binder.c             Mini service manager, echo service, echo client
+tools/binder_probe.c                   Basic Binder ioctl probe
+tools/binder_ping.c                    Low-level Binder transaction/object/callback tests
+tools/sidecar_binder.c                 Mini service manager, echo service, echo client
 
-patches/                           Kernel/module patches
-artifacts/                         Built module artifacts
-docs/                              Notes and milestone documentation
+patches/                               Kernel/module patches
+artifacts/                             Built module artifacts
+docs/                                  Notes and milestone documentation
 ```
 
 Generated files under `build/` should normally not be committed.
@@ -236,7 +264,7 @@ build/echo_client_static
 
 ---
 
-## Install sidecar to internal storage
+## Sidecar location on TV
 
 Recommended sidecar location on the tested TV:
 
@@ -244,17 +272,7 @@ Recommended sidecar location on the tested TV:
 /media/internal/android-sidecar
 ```
 
-This is preferred over `/home/root/android-sidecar` because `/media/internal` has more free space on the tested device.
-
-Install:
-
-```bash
-cd ~/disk/webos-dirty-binder
-
-TV_IP=192.168.2.121 \
-SIDE_DIR=/media/internal/android-sidecar \
-./scripts/install-sidecar-tv.sh
-```
+This is preferred over `/home/root/android-sidecar` on the tested device because `/media/internal` has more free space.
 
 Installed layout:
 
@@ -277,10 +295,24 @@ Installed layout:
   load-binder-tv.sh
 ```
 
-Current sidecar size is small:
+The current sidecar is small:
 
 ```text
 2.9M /media/internal/android-sidecar
+```
+
+---
+
+## Install sidecar to internal storage
+
+Install:
+
+```bash
+cd ~/disk/webos-dirty-binder
+
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/install-sidecar-tv.sh
 ```
 
 ---
@@ -381,6 +413,105 @@ echo-service BR_TRANSACTION code=0x4543484f sender_pid=3587 sender_euid=0 data_s
 echo-service request payload: hello from sidecar smoke
 echo-service reply: write_consumed=80 read_consumed=0
 ```
+
+---
+
+## Lazy cleanup smoke test
+
+Because `BC_REQUEST_DEATH_NOTIFICATION` currently returns `EINVAL` on the tested LG webOS Binder target, the sidecar service manager uses lazy cleanup.
+
+Run:
+
+```bash
+cd ~/disk/webos-dirty-binder
+
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/run-sidecar-lazy-cleanup-tv.sh
+```
+
+Expected result:
+
+```text
+BEFORE_EXIT=0
+AFTER_EXIT=1
+```
+
+Flow:
+
+```text
+1. Start mini_servicemgr.
+2. Start echo_service.
+3. Register test.echo.
+4. Run echo_client before killing the service.
+5. Confirm the call succeeds.
+6. Kill echo_service.
+7. Run echo_client again.
+8. mini_servicemgr pings the stored handle.
+9. Binder returns BR_DEAD_REPLY.
+10. mini_servicemgr removes test.echo from the registry.
+11. getService returns NOT FOUND.
+```
+
+Confirmed lazy cleanup log:
+
+```text
+sm-server: ping service name=test.echo handle=1
+sm-server ping got BR_DEAD_REPLY 0x00007205
+sm-server: ping service dead/failed cmd=0x00007205
+sm-server: lazy cleanup removing stale service name=test.echo handle=1
+sm-server get stale-notfound reply: write_consumed=80 read_consumed=0
+```
+
+Confirmed client-side result after cleanup:
+
+```text
+getService text reply status=1 text=NOT FOUND
+echo-client: getService failed for test.echo
+```
+
+---
+
+## Binder death notification behavior
+
+Death notifications were tested with:
+
+```text
+BC_REQUEST_DEATH_NOTIFICATION
+```
+
+The command is now packed as:
+
+```text
+uint32_t cmd
+uint32_t handle
+binder_uintptr_t cookie
+```
+
+On arm64 this produces:
+
+```text
+write_size=16
+```
+
+Confirmed log:
+
+```text
+BC_REQUEST_DEATH_NOTIFICATION service handle: BINDER_WRITE_READ write_size=16 read_size=0
+BC_REQUEST_DEATH_NOTIFICATION service handle: ioctl failed errno=22 (Invalid argument)
+```
+
+This means the original struct-padding issue was eliminated, but this LG/webOS Binder 4.4 target still rejects the command with `EINVAL`.
+
+Current policy:
+
+```text
+Death notification request fails -> continue running
+getService() validates the stored handle through a Binder ping
+dead handle -> lazy cleanup -> NOT FOUND
+```
+
+This keeps the sidecar functional even without automatic death notifications.
 
 ---
 
@@ -565,6 +696,23 @@ Without these acquisitions, later calls can fail with:
 BR_FAILED_REPLY
 ```
 
+### Death notifications and lazy cleanup
+
+`BC_REQUEST_DEATH_NOTIFICATION` currently fails on the tested LG/webOS kernel:
+
+```text
+errno=22 (Invalid argument)
+```
+
+The sidecar therefore uses lazy cleanup:
+
+```text
+getService(name)
+  -> ping stored handle
+  -> if alive, return handle
+  -> if BR_DEAD_REPLY, remove service and return NOT FOUND
+```
+
 ---
 
 ## Current capabilities
@@ -588,6 +736,12 @@ Confirmed:
 - `getService(name) -> handle`
 - Client call through returned handle
 - Service response through Binder
+- Stale service detection through Binder ping
+- Lazy cleanup after `BR_DEAD_REPLY`
+
+Known limitation:
+
+- `BC_REQUEST_DEATH_NOTIFICATION` returns `EINVAL` on the tested target.
 
 Not yet confirmed:
 
@@ -596,11 +750,10 @@ Not yet confirmed:
 - Binder service manager compatibility with AOSP
 - Android `libbinder` userspace binaries
 - Android `servicemanager`
-- Death notifications
 - File descriptor transfer
 - Multiple services
 - Multiple clients
-- Handle cleanup/release lifecycle
+- Full release/cleanup lifecycle
 - Stress testing
 - Android-native daemons
 - APK support
@@ -618,22 +771,24 @@ Not yet confirmed:
    - register more than one service
    - list registered services
    - replace service by name
-   - handle service death
+   - handle stale services through lazy cleanup
 
-3. Add a clean protocol:
+3. Add a cleaner service manager protocol:
    - `ADD_SERVICE`
    - `GET_SERVICE`
    - `LIST_SERVICES`
-   - `CALL`
+   - `PING_SERVICE`
    - structured status codes
 
-4. Add Binder death notification tests:
-   - `BC_REQUEST_DEATH_NOTIFICATION`
-   - `BR_DEAD_BINDER`
-   - `BC_CLEAR_DEATH_NOTIFICATION`
-
-5. Add file descriptor passing:
+4. Add file descriptor passing:
    - `BINDER_TYPE_FD`
+
+5. Add stress testing:
+   - repeated service registration
+   - repeated lookup
+   - repeated stale cleanup
+   - forked clients
+   - service restart loops
 
 6. Try Android-native userspace components:
    - Android `libbinder`
@@ -682,6 +837,18 @@ Check handle lifetime.
 
 The service manager must acquire the stored service handle, and the client must acquire the returned handle before freeing the reply buffer.
 
+### `BR_DEAD_REPLY` after service death
+
+This is expected if a client tries to call a dead handle directly.
+
+The sidecar avoids returning stale handles by pinging services during `getService()` and removing dead entries through lazy cleanup.
+
+### `BC_REQUEST_DEATH_NOTIFICATION` returns EINVAL
+
+This is currently observed on the tested LG/webOS Binder 4.4 target.
+
+Lazy cleanup is used as a working fallback.
+
 ### `scp: dest open "/tmp/binder_ping": Failure`
 
 The binary may be running or locked.
@@ -710,8 +877,14 @@ Recommended milestone commit:
 
 ```bash
 git status --short
-git add README.md tools/sidecar_binder.c scripts/build-sidecar.sh scripts/install-sidecar-tv.sh scripts/run-sidecar-smoke-tv.sh
-git commit -m "Add Binder sidecar service manager smoke test"
+git add README.md \
+        tools/sidecar_binder.c \
+        scripts/build-sidecar.sh \
+        scripts/install-sidecar-tv.sh \
+        scripts/run-sidecar-smoke-tv.sh \
+        scripts/run-sidecar-death-smoke-tv.sh \
+        scripts/run-sidecar-lazy-cleanup-tv.sh
+git commit -m "Add Binder sidecar service manager lazy cleanup"
 git push origin HEAD:main
 ```
 
