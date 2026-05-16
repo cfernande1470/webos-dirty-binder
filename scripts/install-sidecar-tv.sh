@@ -18,9 +18,10 @@ scp build/libbinder_lite_client_static root@"$TV_IP":"$SIDE_DIR/bin/libbinder_li
 scp build/aidl_lite_echo_client_static root@"$TV_IP":"$SIDE_DIR/bin/aidl_lite_echo_client"
 scp build/aidl_lite_echo_service_static root@"$TV_IP":"$SIDE_DIR/bin/aidl_lite_echo_service"
 scp build/android_like_echo_client_static root@"$TV_IP":"$SIDE_DIR/bin/android_like_echo_client"
+scp build/android_like_echo_service_static root@"$TV_IP":"$SIDE_DIR/bin/android_like_echo_service"
 scp build/linux-4.4.84/drivers/android/binder.ko root@"$TV_IP":"$SIDE_DIR/modules/binder.ko"
 scp scripts/load-binder-tv.sh root@"$TV_IP":"$SIDE_DIR/load-binder-tv.sh"
 
-ssh root@"$TV_IP" "chmod +x '$SIDE_DIR/bin/mini_servicemgr' '$SIDE_DIR/bin/echo_service' '$SIDE_DIR/bin/echo_client' '$SIDE_DIR/bin/list_services' '$SIDE_DIR/bin/aosp_sm_probe' '$SIDE_DIR/bin/libbinder_lite_client' '$SIDE_DIR/bin/aidl_lite_echo_client' '$SIDE_DIR/bin/aidl_lite_echo_service' '$SIDE_DIR/bin/android_like_echo_client' '$SIDE_DIR/load-binder-tv.sh'"
+ssh root@"$TV_IP" "chmod +x '$SIDE_DIR/bin/mini_servicemgr' '$SIDE_DIR/bin/echo_service' '$SIDE_DIR/bin/echo_client' '$SIDE_DIR/bin/list_services' '$SIDE_DIR/bin/aosp_sm_probe' '$SIDE_DIR/bin/libbinder_lite_client' '$SIDE_DIR/bin/aidl_lite_echo_client' '$SIDE_DIR/bin/aidl_lite_echo_service' '$SIDE_DIR/bin/android_like_echo_client' '$SIDE_DIR/bin/android_like_echo_service' '$SIDE_DIR/load-binder-tv.sh'"
 
 echo "Installed sidecar to $TV_IP:$SIDE_DIR"
