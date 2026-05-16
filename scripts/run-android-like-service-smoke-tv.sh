@@ -71,7 +71,8 @@ if [ "$client_rc" -ne 0 ]; then
   exit "$client_rc"
 fi
 
-grep -q 'ANDROID_LIKE_AIDL_WIRE_OK' logs/android_like_service_client.log
+grep -q 'ANDROID_LIKE_INTERFACE_CONTRACT_OK' logs/android_like_service_client.log
+grep -q 'ANDROID_LIKE_AIDL_WIRE_OK' logs/android_like_client.log
 grep -q 'ANDROID_LIKE_API_CLIENT_OK' logs/android_like_service_client.log
 
 echo "== Android-like service log markers =="

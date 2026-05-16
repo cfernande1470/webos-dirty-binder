@@ -15,6 +15,8 @@
 
 #include <linux/android/binder.h>
 
+#include "android_like_echo_iface.hpp"
+
 #define BINDER_DEVICE "/dev/binder"
 #define BINDER_MMAP_SIZE (1024 * 1024)
 
@@ -25,8 +27,6 @@
 
 #define AOSP_SM_DESCRIPTOR "android.os.IServiceManager"
 #define AOSP_SM_ADD_SERVICE_TRANSACTION 3U
-#define ANDROID_LIKE_ECHO_DESCRIPTOR "webos.dirtybinder.IEchoService"
-#define ANDROID_LIKE_TRANSACTION_ECHO_TEXT 1U
 
 struct sc_text_reply {
     uint32_t magic;
