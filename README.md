@@ -1,90 +1,49 @@
-# webos-dirty-binder
+# webos-dirty-binder — AOSP ServiceManager Compatibility v0
 
 Experimental Android Binder IPC sidecar for LG webOS TVs.
 
-This project builds and loads a modified Android Binder kernel module on a real LG webOS TV, then runs a small Binder-based sidecar userspace consisting of:
-
-- a mini Binder service manager
-- an echo service
-- an echo client
-- a `listServices` client
-- reproducible smoke tests for Binder transactions, service registration, death notifications, service replacement, context-manager restart, and stress calls
+This project builds and loads a modified Android Binder kernel module on a real LG webOS TV, then runs a small Binder userspace sidecar on top of `/dev/binder`.
 
 The current milestone is:
 
-> **Binder IPC is working on LG webOS with a reproducible sidecar test suite.**
+> **Android Binder IPC works on LG webOS, with a reproducible sidecar test suite and AOSP `android.os.IServiceManager` compatibility v0.**
 
-This is not Android TV, Waydroid, or Anbox yet. It is a validated Binder IPC foundation running directly on webOS.
-
----
-
-## Target tested
-
-Validated on:
-
-```text
-Device: LG webOS TV
-Kernel: 4.4.84-229.1.kavir.2
-Arch: aarch64
-Binder protocol: 8
-TV SSH: root@192.168.2.121
-Build host: NanoPi R3S / Ubuntu 24.04.4 LTS / aarch64
-Project path on build host: ~/disk/webos-dirty-binder
-```
-
-Observed kernel:
-
-```text
-Linux LGwebOSTV 4.4.84-229.1.kavir.2 #1 SMP PREEMPT Mon Jan 17 08:08:42 UTC 2022 aarch64 GNU/Linux
-Linux version 4.4.84-229.1.kavir.2 (oe-user@oe-host) (gcc version 8.2.0 (GCC) ) #1 SMP PREEMPT Mon Jan 17 08:08:42 UTC 2022
-```
-
-Observed Binder device:
-
-```text
-/dev/binder
-major 10, minor 53
-```
-
-On this target, only `/dev/binder` is created. `/dev/hwbinder` and `/dev/vndbinder` are not currently present.
+This is not Android TV yet. It is a validated Binder foundation for future Android userspace experiments on webOS.
 
 ---
 
-## Current status
+## 1. Current milestone summary
 
-Confirmed working:
+Validated milestones:
 
-- Binder module builds for LG webOS kernel `4.4.84-229.1.kavir.2`
-- module loads on TV with exact vermagic
-- `/dev/binder` appears as misc device
-- `BINDER_VERSION` returns Binder protocol `8`
-- `BINDER_SET_MAX_THREADS` works
-- `BINDER_SET_CONTEXT_MGR` works
-- Binder mmap path works through the experimental allocation shim
-- basic `BC_TRANSACTION` / `BR_TRANSACTION` works
-- `BR_REPLY` works
-- Binder object passing works
-- `BINDER_TYPE_BINDER` to `BINDER_TYPE_HANDLE` works
-- `BC_INCREFS_DONE` and `BC_ACQUIRE_DONE` work
-- service handle acquisition works
-- death notifications work
-- `BR_DEAD_BINDER_RAW` is handled
-- `BC_DEAD_BINDER_DONE` is sent
-- `BR_DEAD_REPLY` is observed when the context manager is gone
-- mini service manager works
-- `addService` works
-- `getService` works
-- `listServices` works
-- service replacement by duplicate name works
-- service death cleanup works
-- replacement service survives death of the old replaced service
-- context manager restart works
-- repeated service rebind works
-- multi-service registry works
-- concurrent stress calls work
-- full TV quick check passes
+1. Dirty Binder kernel module loads on LG webOS.
+2. `/dev/binder` is created and usable.
+3. Binder protocol `8` works.
+4. Basic Binder transaction ping works.
+5. Binder object passing works.
+6. A mini Binder sidecar service manager works.
+7. Sidecar service registration, lookup, listing, death notifications, duplicate replacement, context-manager restart and stress tests work.
+8. AOSP-style `android.os.IServiceManager` compatibility works for:
+   - `listServices`
+   - `checkService`
+   - `getService`
+   - `addService`
+9. Full smoke suite passes.
 
-Latest full validation:
+Latest known good AOSP markers:
+
+```text
+AOSP_LIST_SERVICES_OK
+AOSP_CHECK_SERVICE_OK
+AOSP_GET_SERVICE_OK
+AOSP_ADD_SERVICE_OK
+AOSP_ALIAS_SERVICE_OK
+AOSP_SM_COMPAT_OK
+AOSP_SM_COMPAT_SMOKE_OK
+ALL_SIDECAR_SMOKE_OK
+```
+
+Latest known good quick-check markers:
 
 ```text
 DUPLICATE_SMOKE_OK
@@ -94,30 +53,68 @@ QUICK_CHECK_TV_OK
 
 ---
 
-## Safety notes
+## 2. Target tested
 
-This is a kernel/module research project for your own device.
+Validated on:
 
-Important notes:
+```text
+Device: LG webOS TV
+Kernel: 4.4.84-229.1.kavir.2
+Arch: aarch64
+Binder protocol: 8
+TV SSH: root@192.168.2.121
+Build host: NanoPi R3S
+Build host OS: Ubuntu 24.04.4 LTS
+Project path on build host: ~/disk/webos-dirty-binder
+```
+
+Observed TV kernel:
+
+```text
+Linux LGwebOSTV 4.4.84-229.1.kavir.2 #1 SMP PREEMPT Mon Jan 17 08:08:42 UTC 2022 aarch64 GNU/Linux
+Linux version 4.4.84-229.1.kavir.2 (oe-user@oe-host) (gcc version 8.2.0 (GCC) ) #1 SMP PREEMPT Mon Jan 17 08:08:42 UTC 2022
+```
+
+Observed Binder device:
+
+```text
+crw------- 1 root root 10, 53 ... /dev/binder
+```
+
+On the tested target:
+
+```text
+/dev/binder     present
+/dev/hwbinder   not present
+/dev/vndbinder  not present
+```
+
+---
+
+## 3. Safety notes
+
+This is a kernel/module research project for your own hardware.
+
+Important:
 
 - The Binder module is loaded manually.
 - The module is effectively permanent until reboot on this target.
-- Do not load random kernel modules on devices you cannot recover.
-- Do not write to LG system partitions unless you fully understand the recovery path.
-- The current Binder mmap allocation shim is experimental and verbose.
-- Reboot the TV after kernel Oops, failed module experiments, or unexpected Binder state.
-- Treat `/tmp` and `/media/internal/android-sidecar` deployment as disposable.
+- A kernel Oops may require rebooting the TV.
+- Do not write to LG system partitions unless you have a recovery path.
+- The Binder mmap shim is experimental.
+- The current deployment is manual over SSH.
+- Treat `/tmp` and `/media/internal/android-sidecar` as disposable deployment areas.
+- Reboot after serious kernel-side failures.
 
-Recommended workflow:
+Recommended reboot after kernel-side failures:
 
 ```sh
-# TV reboot after serious kernel-side failures
 ssh root@192.168.2.121 'sync; reboot'
 ```
 
 ---
 
-## Repository layout
+## 4. Repository layout
 
 Important paths:
 
@@ -133,6 +130,7 @@ build/
   echo_service_static
   echo_client_static
   list_services_static
+  aosp_sm_probe_static
 
 build/linux-4.4.84/
   LG kernel tree used to build binder.ko
@@ -147,6 +145,7 @@ scripts/
   build-sidecar.sh
   install-sidecar-tv.sh
   load-binder-tv.sh
+
   run-sidecar-smoke-tv.sh
   run-sidecar-list-smoke-tv.sh
   run-sidecar-death-smoke-tv.sh
@@ -155,6 +154,7 @@ scripts/
   run-sidecar-rebind-smoke-tv.sh
   run-sidecar-context-restart-smoke-tv.sh
   run-sidecar-duplicate-smoke-tv.sh
+  run-aosp-sm-compat-smoke-tv.sh
   run-sidecar-all-smoke-tv.sh
   quick-check-tv.sh
 
@@ -162,15 +162,22 @@ tools/
   binder_probe.c
   binder_ping.c
   sidecar_binder.c
+  aosp_sm_probe.c
 ```
 
 ---
 
-## Build requirements
+## 5. Build requirements
 
-The build host used for validation was a NanoPi R3S running Ubuntu 24.04.4 LTS on aarch64.
+Validated build host:
 
-Required tools include:
+```text
+NanoPi R3S
+Ubuntu 24.04.4 LTS
+aarch64
+```
+
+Install typical dependencies:
 
 ```sh
 sudo apt update
@@ -192,9 +199,7 @@ The sidecar and test tools are built as static aarch64 binaries.
 
 ---
 
-## Build the Binder module
-
-From the project directory:
+## 6. Build Binder module
 
 ```sh
 cd ~/disk/webos-dirty-binder
@@ -209,34 +214,34 @@ OK: no known non-exported Binder symbols remain
 Build completed: artifacts/binder-dirty-lgc1-o20-4.4.84-229.1.kavir.2.ko
 ```
 
-The build script:
+The module build script:
 
 - resets the kernel tree
 - applies the LG config
-- applies the webOS dirty Binder patch
+- applies Binder integration patches
 - injects the Binder mmap allocation shim
 - configures Binder as a module
 - patches incompatible kernel API usage where needed
 - builds `drivers/android/binder.ko`
-- copies the result to `artifacts/`
+- copies the final module to `artifacts/`
 
 ---
 
-## Build userland tools
+## 7. Build userland tools
 
-Build the basic Binder probe:
+Build basic probe:
 
 ```sh
 ./scripts/build-probe.sh
 ```
 
-Build the Binder ping transaction tester:
+Build basic Binder ping:
 
 ```sh
 ./scripts/build-ping.sh
 ```
 
-Build sidecar tools:
+Build sidecar and AOSP probe:
 
 ```sh
 ./scripts/build-sidecar.sh
@@ -252,14 +257,18 @@ build/mini_servicemgr_static
 build/echo_service_static
 build/echo_client_static
 build/list_services_static
+build/aosp_sm_probe_static
 ```
 
-Important: build Binder userland tools with the project scripts, not with plain host headers.
+Important:
+
+> Build Binder userland tools with the project scripts, not with arbitrary host Binder headers.
 
 Correct:
 
 ```sh
 ./scripts/build-ping.sh
+./scripts/build-sidecar.sh
 ```
 
 Incorrect:
@@ -268,20 +277,20 @@ Incorrect:
 gcc -O2 -static -Wall -Wextra -o build/binder_ping_static tools/binder_ping.c
 ```
 
-Plain host headers can mismatch Binder UAPI structs and cause invalid Binder command streams or kernel crashes.
+Using mismatched host Binder headers can produce incompatible Binder command streams and kernel crashes.
 
 ---
 
-## Load Binder on the TV
+## 8. Load Binder manually
 
-Copy the module and loader manually:
+Copy module and loader:
 
 ```sh
 scp artifacts/binder-dirty-lgc1-o20-4.4.84-229.1.kavir.2.ko root@192.168.2.121:/tmp/binder.ko
 scp scripts/load-binder-tv.sh root@192.168.2.121:/tmp/load-binder-tv.sh
 ```
 
-Load it:
+Load:
 
 ```sh
 ssh root@192.168.2.121 '
@@ -299,9 +308,9 @@ binder 118784 0 [permanent], Live ... (O)
 crw------- 1 root root 10, 53 ... /dev/binder
 ```
 
-The loader resolves non-exported symbols from `/proc/kallsyms` and passes them to `insmod`.
+The loader resolves non-exported symbols from `/proc/kallsyms` and passes their addresses to `insmod`.
 
-The module parameters include symbols such as:
+Module parameters include:
 
 ```text
 sym_zap_page_range
@@ -317,9 +326,7 @@ sym___alloc_fd
 
 ---
 
-## Basic Binder probe
-
-Copy and run:
+## 9. Basic Binder probe
 
 ```sh
 scp build/binder_probe_static root@192.168.2.121:/tmp/binder_probe
@@ -339,23 +346,13 @@ BINDER_SET_MAX_THREADS ok
 
 ---
 
-## Basic Binder transaction ping
-
-Build with the project script:
+## 10. Basic Binder transaction ping
 
 ```sh
 ./scripts/build-ping.sh
-```
 
-Copy:
-
-```sh
 scp build/binder_ping_static root@192.168.2.121:/tmp/binder_ping
-```
 
-Run server and client:
-
-```sh
 ssh root@192.168.2.121 '
   chmod +x /tmp/binder_ping
 
@@ -376,7 +373,7 @@ ssh root@192.168.2.121 '
 '
 ```
 
-Expected client success:
+Expected client result:
 
 ```text
 client BR_TRANSACTION_COMPLETE
@@ -384,7 +381,7 @@ client BR_REPLY code=0x0 flags=0x0
 client reply payload: PONG from webOS binder server
 ```
 
-Expected server side:
+Expected server result:
 
 ```text
 BINDER_SET_CONTEXT_MGR ok
@@ -395,7 +392,7 @@ server_reply completed
 
 ---
 
-## Sidecar deployment
+## 11. Sidecar deployment
 
 Build:
 
@@ -403,7 +400,7 @@ Build:
 ./scripts/build-sidecar.sh
 ```
 
-Install to the TV:
+Install:
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -411,7 +408,7 @@ SIDE_DIR=/media/internal/android-sidecar \
 ./scripts/install-sidecar-tv.sh
 ```
 
-Installed layout on the TV:
+Installed layout:
 
 ```text
 /media/internal/android-sidecar/
@@ -420,6 +417,7 @@ Installed layout on the TV:
     echo_service
     echo_client
     list_services
+    aosp_sm_probe
   modules/
     binder.ko
   logs/
@@ -427,24 +425,23 @@ Installed layout on the TV:
   load-binder-tv.sh
 ```
 
-The installer copies:
+Mapping from build host to TV:
 
 ```text
 build/mini_servicemgr_static -> bin/mini_servicemgr
 build/echo_service_static    -> bin/echo_service
 build/echo_client_static     -> bin/echo_client
 build/list_services_static   -> bin/list_services
+build/aosp_sm_probe_static   -> bin/aosp_sm_probe
 binder.ko                    -> modules/binder.ko
 load-binder-tv.sh            -> load-binder-tv.sh
 ```
 
 ---
 
-## Sidecar protocol
+## 12. Sidecar native protocol
 
-The sidecar uses Binder transactions to handle a small service-manager protocol.
-
-Current operation codes:
+The sidecar has a minimal Binder protocol for internal testing:
 
 ```c
 SC_CODE_ADD_SERVICE    = 0x53434144U  /* SCAD */
@@ -454,7 +451,7 @@ SC_CODE_ECHO           = 0x4543484fU  /* ECHO */
 SC_CODE_PING           = 0x50494e47U  /* PING */
 ```
 
-Implemented flows:
+Implemented:
 
 ```text
 addService(name, binder)
@@ -465,11 +462,142 @@ echo request/reply
 death notification registration
 death notification cleanup
 duplicate service replacement
+context manager restart handling
 ```
 
 ---
 
-## Run the basic sidecar smoke test
+## 13. AOSP IServiceManager compatibility v0
+
+The sidecar implements a minimal AOSP-style `android.os.IServiceManager` compatibility layer.
+
+Supported transaction codes:
+
+```c
+AOSP_SM_GET_SERVICE_TRANSACTION    = 1
+AOSP_SM_CHECK_SERVICE_TRANSACTION  = 2
+AOSP_SM_ADD_SERVICE_TRANSACTION    = 3
+AOSP_SM_LIST_SERVICES_TRANSACTION  = 4
+```
+
+Supported interface token:
+
+```text
+android.os.IServiceManager
+```
+
+Supported AOSP-style operations:
+
+```text
+listServices(index) -> String16
+checkService(name)  -> strong Binder handle
+getService(name)    -> strong Binder handle
+addService(name, handle) -> status int32
+```
+
+The AOSP probe validates:
+
+```text
+AOSP listServices contains test.aosp
+AOSP checkService("test.aosp") returns a handle
+AOSP getService("test.aosp") returns a handle
+the returned handle can call echo service
+AOSP addService("test.aosp.alias", handle) succeeds
+AOSP listServices contains test.aosp.alias
+AOSP checkService("test.aosp.alias") returns a handle
+the alias handle can call echo service
+```
+
+Expected success markers:
+
+```text
+AOSP_LIST_SERVICES_OK
+AOSP_CHECK_SERVICE_OK
+AOSP_GET_SERVICE_OK
+AOSP_ADD_SERVICE_OK
+AOSP_ALIAS_SERVICE_OK
+AOSP_SM_COMPAT_OK
+AOSP_SM_COMPAT_SMOKE_OK
+```
+
+This is the current high-level Android compatibility milestone.
+
+---
+
+## 14. AOSP wire-format notes
+
+The compatibility layer currently understands a minimal Parcel shape.
+
+For ServiceManager calls, the probe sends:
+
+```text
+int32 strict_policy
+String16 "android.os.IServiceManager"
+...
+```
+
+For `checkService(name)` and `getService(name)`:
+
+```text
+String16 service_name
+```
+
+Reply:
+
+```text
+BINDER_TYPE_HANDLE object
+```
+
+For `listServices(index)`:
+
+```text
+int32 index
+```
+
+Reply:
+
+```text
+String16 service_name
+```
+
+The current implementation follows the indexed `listServices` behavior used by classic native `IServiceManager` clients: call with index `0`, `1`, `2`, etc. until an empty string is returned.
+
+For `addService(name, handle)`:
+
+```text
+String16 service_name
+flat_binder_object BINDER_TYPE_HANDLE
+int32 allowIsolated
+```
+
+Reply:
+
+```text
+int32 status
+```
+
+The current `aosp_sm_probe` uses `BINDER_TYPE_HANDLE` to alias an existing service handle:
+
+```text
+test.aosp       -> original echo service
+test.aosp.alias -> alias registered via AOSP addService
+```
+
+Successful alias validation:
+
+```text
+AOSP addService name=test.aosp.alias handle=1
+AOSP addService reply status=0
+AOSP_ADD_SERVICE_OK
+AOSP listServices[1]=test.aosp.alias
+AOSP checkService alias got handle=1
+aosp echo reply status=0 text=echo-service reply from webOS sidecar
+AOSP_ALIAS_SERVICE_OK
+```
+
+---
+
+## 15. Run basic sidecar smoke
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -484,18 +612,9 @@ CLIENT_EXIT=0
 echo-client reply status=0 text=echo-service reply from webOS sidecar
 ```
 
-This validates:
-
-- mini service manager starts as Binder context manager
-- echo service registers with `addService`
-- client gets service with `getService`
-- service handle is returned as Binder object
-- client calls service handle
-- echo service replies successfully
-
 ---
 
-## Run listServices smoke test
+## 16. Run listServices smoke
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -515,15 +634,9 @@ test.echo
 LIST_SMOKE_OK
 ```
 
-This validates:
-
-- empty service registry can be listed
-- registered service appears in `listServices`
-- regular echo call still works after `listServices`
-
 ---
 
-## Run service death smoke test
+## 17. Run service death smoke
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -534,7 +647,6 @@ SIDE_DIR=/media/internal/android-sidecar \
 Expected:
 
 ```text
-echo-client reply status=0 text=echo-service reply from webOS sidecar
 BR_DEAD_BINDER_RAW
 sm-server: service died name=test.death
 BC_DEAD_BINDER_DONE
@@ -542,18 +654,9 @@ getService text reply status=1 text=NOT FOUND
 DEATH_SMOKE_OK
 ```
 
-This validates:
-
-- service registers
-- client can call it
-- service process dies
-- Binder sends death notification
-- service manager clears registry entry
-- subsequent clients fail cleanly
-
 ---
 
-## Run multiservice smoke test
+## 18. Run multiservice smoke
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -573,17 +676,9 @@ echo-client: getService failed for test.echo.a
 MULTISERVICE_SMOKE_OK
 ```
 
-This validates:
-
-- multiple services can register
-- `listServices` lists both
-- both services can be called
-- killing one service removes only that service
-- the other service stays alive and callable
-
 ---
 
-## Run stress smoke test
+## 19. Run stress smoke
 
 Moderate:
 
@@ -613,11 +708,9 @@ FAILURES=0
 STRESS_SMOKE_OK
 ```
 
-This validates repeated concurrent client calls against the same service.
-
 ---
 
-## Run service rebind smoke test
+## 20. Run service rebind smoke
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -633,17 +726,17 @@ REBIND_SMOKE_OK
 
 This validates:
 
-- a service can register
+- service registers
 - client can call it
-- service can die
+- service dies
 - registry becomes clean
-- same service name can register again
+- same service name registers again
 - client can call the new instance
 - final cleanup works
 
 ---
 
-## Run context-manager restart smoke test
+## 21. Run context-manager restart smoke
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -669,7 +762,7 @@ This validates:
 
 ---
 
-## Run duplicate service smoke test
+## 22. Run duplicate service smoke
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -683,7 +776,7 @@ Expected:
 DUPLICATE_SMOKE_OK
 ```
 
-This validates duplicate-name service replacement:
+This validates duplicate-name replacement:
 
 ```text
 first service registers test.duplicate -> handle=1
@@ -697,9 +790,9 @@ final getService returns NOT FOUND
 
 Important bug fixed:
 
-Earlier, death notification cookies were tied to the service registry slot. When a duplicate registration replaced the old service in the same slot, the old service death could incorrectly clear the new service. This was fixed by generating unique death cookies for each service registration.
+Earlier, death notification cookies were tied to the service registry slot. When a duplicate registration replaced the old service in the same slot, the old service death could incorrectly clear the new service.
 
-Expected fixed behavior:
+Fixed behavior:
 
 ```text
 cookie=0x53444301  old service
@@ -711,7 +804,53 @@ death cookie 0x53444302 -> service removed
 
 ---
 
-## Run the full sidecar smoke suite
+## 23. Run AOSP ServiceManager compatibility smoke
+
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/run-aosp-sm-compat-smoke-tv.sh
+```
+
+Expected final markers:
+
+```text
+AOSP_LIST_SERVICES_OK
+AOSP_CHECK_SERVICE_OK
+AOSP_GET_SERVICE_OK
+AOSP_ADD_SERVICE_OK
+AOSP_ALIAS_SERVICE_OK
+AOSP_SM_COMPAT_OK
+AOSP_SM_COMPAT_SMOKE_OK
+```
+
+Example successful flow:
+
+```text
+AOSP listServices[0]=test.aosp
+AOSP_LIST_SERVICES_OK
+
+AOSP checkService name=test.aosp
+AOSP reply object: offset=0 type=0x73682a85 handle=1
+AOSP_CHECK_SERVICE_OK
+
+AOSP getService name=test.aosp
+AOSP_GET_SERVICE_OK
+
+AOSP addService name=test.aosp.alias handle=1
+AOSP addService reply status=0
+AOSP_ADD_SERVICE_OK
+
+AOSP listServices[1]=test.aosp.alias
+AOSP_ALIAS_SERVICE_OK
+
+AOSP_SM_COMPAT_OK
+AOSP_SM_COMPAT_SMOKE_OK
+```
+
+---
+
+## 24. Run full smoke suite
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -721,13 +860,7 @@ ROUNDS=10 \
 ./scripts/run-sidecar-all-smoke-tv.sh
 ```
 
-Expected final line:
-
-```text
-ALL_SIDECAR_SMOKE_OK
-```
-
-This runs:
+Runs:
 
 ```text
 run-sidecar-smoke-tv.sh
@@ -738,13 +871,21 @@ run-sidecar-stress-smoke-tv.sh
 run-sidecar-rebind-smoke-tv.sh
 run-sidecar-context-restart-smoke-tv.sh
 run-sidecar-duplicate-smoke-tv.sh
+run-aosp-sm-compat-smoke-tv.sh
+```
+
+Expected:
+
+```text
+AOSP_SM_COMPAT_SMOKE_OK
+ALL_SIDECAR_SMOKE_OK
 ```
 
 ---
 
-## Run complete TV quick check
+## 25. Run complete TV quick check
 
-This is the current one-command validation path.
+Current one-command validation path:
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -754,7 +895,7 @@ ROUNDS=10 \
 ./scripts/quick-check-tv.sh
 ```
 
-Expected final line:
+Expected:
 
 ```text
 QUICK_CHECK_TV_OK
@@ -762,17 +903,17 @@ QUICK_CHECK_TV_OK
 
 This validates:
 
-- current git status and commit
-- module build
-- probe build
-- ping build
+- current git commit/status
+- Binder module build
+- Binder probe build
+- Binder ping build
 - sidecar build
 - sidecar install
 - standalone Binder probe
 - standalone Binder ping transaction
 - full sidecar smoke suite
 
-Latest observed success:
+Latest known successful quick-check:
 
 ```text
 DUPLICATE_SMOKE_OK
@@ -782,33 +923,11 @@ QUICK_CHECK_TV_OK
 
 ---
 
-## Known limitations
-
-Current limitations:
-
-- this is not Android TV userspace
-- no Waydroid/Anbox integration yet
-- no Android `servicemanager` binary yet
-- no Android init
-- no ashmem/memfd integration layer yet
-- no SELinux integration
-- no Android graphics stack
-- no Android audio HAL
-- no Android input HAL
-- only `/dev/binder` is present on the tested TV
-- `/dev/hwbinder` and `/dev/vndbinder` are not currently created
-- Binder module remains loaded until reboot
-- Binder mmap shim is experimental
-- debug logging is very verbose
-- deployment is manual over SSH
-
----
-
-## Troubleshooting
+## 26. Troubleshooting
 
 ### `/dev/binder` missing
 
-Load Binder:
+Load Binder from sidecar install:
 
 ```sh
 ssh root@192.168.2.121 '
@@ -820,7 +939,11 @@ ssh root@192.168.2.121 '
 Check:
 
 ```sh
-ssh root@192.168.2.121 'ls -l /dev/binder; grep binder /proc/misc; grep "^binder " /proc/modules'
+ssh root@192.168.2.121 '
+  ls -l /dev/binder
+  grep binder /proc/misc
+  grep "^binder " /proc/modules
+'
 ```
 
 ### `module not found`
@@ -834,15 +957,13 @@ ssh root@192.168.2.121 '
 '
 ```
 
-Expected module path:
+Expected:
 
 ```text
 /media/internal/android-sidecar/modules/binder.ko
 ```
 
-### `mini_servicemgr_static: not found`
-
-The installed binary names are not the build names.
+### Installed binary names
 
 Build host names:
 
@@ -851,6 +972,7 @@ build/mini_servicemgr_static
 build/echo_service_static
 build/echo_client_static
 build/list_services_static
+build/aosp_sm_probe_static
 ```
 
 TV install names:
@@ -860,38 +982,76 @@ bin/mini_servicemgr
 bin/echo_service
 bin/echo_client
 bin/list_services
+bin/aosp_sm_probe
 ```
 
 ### Kernel Oops after Binder transaction
 
-Do not compile Binder tools with arbitrary system headers. Use the project scripts:
+Use project scripts to build Binder userland tools:
 
 ```sh
 ./scripts/build-ping.sh
 ./scripts/build-sidecar.sh
 ```
 
-A previous invalid test binary compiled against mismatched host Binder UAPI headers caused a crash in `binder_thread_write`. Rebuilding with the project script and kernel `4.4.84` UAPI headers fixed the issue.
+Do not compile Binder tools with arbitrary system headers.
 
-### Context manager gone
+### `BR_DEAD_REPLY`
 
-Clients may receive:
+Expected if the Binder context manager is gone.
+
+Restart `mini_servicemgr` and re-register services.
+
+### Duplicate registration deletes replacement
+
+Check that `sidecar_binder.c` uses unique death cookies per registration.
+
+Wrong:
 
 ```text
-BR_DEAD_REPLY
+death cookie tied to registry slot address
 ```
 
-This is expected if `mini_servicemgr` died. Restart the service manager and re-register services.
+Correct:
 
-### Death cookie issues
+```text
+monotonic death-cookie sequence
+```
 
-Duplicate service replacement requires unique death cookies per registration. If old service death clears the replacement entry, check that `sidecar_binder.c` uses a monotonically increasing death-cookie sequence rather than the address of the registry slot.
+### AOSP probe include errors
+
+`aosp_sm_probe` needs Binder UAPI headers, but including full internal kernel headers can conflict with glibc types.
+
+The build script uses a tiny `build/uapi-compat/linux/compiler.h` shim and UAPI include paths.
+
+Avoid broad includes like:
+
+```text
+-Ibuild/linux-4.4.84/include
+```
+
+for userspace builds.
+
+### AOSP `checkService` gets handle but echo returns `BR_FAILED_REPLY`
+
+Acquire the returned handle before freeing the Binder reply buffer.
+
+Correct flow:
+
+```text
+BR_REPLY with BINDER_TYPE_HANDLE
+BC_ACQUIRE returned handle
+BC_FREE_BUFFER reply buffer
+transact on returned handle
+```
+
+Freeing the buffer first can drop the returned reference before the probe uses it.
 
 ---
 
-## Development workflow
+## 27. Development workflow
 
-Recommended workflow:
+Typical validated workflow:
 
 ```sh
 cd ~/disk/webos-dirty-binder
@@ -909,46 +1069,10 @@ TV_IP=192.168.2.121 \
 SIDE_DIR=/media/internal/android-sidecar \
 CLIENTS=6 \
 ROUNDS=10 \
-./scripts/quick-check-tv.sh
+./scripts/run-sidecar-all-smoke-tv.sh
 ```
 
-Commit only source/scripts unless intentionally updating artifacts:
-
-```sh
-git status --short
-git add tools/sidecar_binder.c scripts/<changed-script>.sh
-git commit -m "..."
-```
-
-Avoid accidentally committing rebuilt `.ko` artifacts unless this is intentional.
-
----
-
-## Milestone summary
-
-This milestone proves:
-
-```text
-LG webOS kernel 4.4.84 + dirty Binder module + minimal Binder sidecar userspace
-```
-
-can support:
-
-```text
-context manager
-service registration
-service lookup
-service listing
-Binder object passing
-synchronous calls
-death notifications
-service replacement
-context manager restart
-basic concurrent traffic
-full reproducible TV validation
-```
-
-Current final validation command:
+Full check:
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -958,7 +1082,141 @@ ROUNDS=10 \
 ./scripts/quick-check-tv.sh
 ```
 
-Current expected success:
+Before committing:
+
+```sh
+git status --short
+git log --oneline -12 --decorate
+```
+
+Avoid committing generated artifacts unless intentional.
+
+---
+
+## 28. Git branches and milestones
+
+Main branch:
+
+```text
+main
+```
+
+AOSP compatibility branch:
+
+```text
+milestone/aosp-sm-compat-v0
+```
+
+Relevant commit sequence on the AOSP branch:
+
+```text
+test: add AOSP service manager compatibility smoke skeleton
+sidecar: add AOSP IServiceManager checkService compatibility probe
+sidecar: add AOSP IServiceManager listServices compatibility
+sidecar: add AOSP IServiceManager getService compatibility
+sidecar: add AOSP IServiceManager addService compatibility
+test: include AOSP ServiceManager compatibility in smoke suite
+```
+
+Recommended release tag:
+
+```text
+aosp-sm-compat-v0
+```
+
+---
+
+## 29. Current limitations
+
+Still not implemented:
+
+- Android TV userspace
+- Waydroid or Anbox integration
+- real Android init
+- real Android `servicemanager` binary
+- full `libbinder` client binary
+- AIDL-generated service/client
+- ashmem/memfd compatibility layer
+- SELinux integration
+- Android graphics stack
+- Android audio HAL
+- Android input HAL
+- `/dev/hwbinder`
+- `/dev/vndbinder`
+
+Current technical limitations:
+
+- only `/dev/binder` is available on the tested TV
+- Binder module stays loaded until reboot
+- Binder mmap shim is experimental
+- logging is verbose
+- deployment is manual over SSH
+- AOSP compatibility is implemented by a minimal probe and sidecar protocol bridge, not by a full Android framework stack
+
+---
+
+## 30. Final milestone statement
+
+This project currently proves:
+
+```text
+LG webOS kernel 4.4.84
++
+dirty Binder kernel module
++
+minimal Binder userspace sidecar
++
+AOSP android.os.IServiceManager compatibility v0
+```
+
+can support:
+
+```text
+Binder context manager
+service registration
+service lookup
+service listing
+Binder object passing
+synchronous Binder transactions
+death notifications
+duplicate-name service replacement
+context-manager restart
+stress calls
+AOSP-style listServices
+AOSP-style checkService
+AOSP-style getService
+AOSP-style addService
+full reproducible smoke validation on TV
+```
+
+Current flagship validation:
+
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+CLIENTS=6 \
+ROUNDS=10 \
+./scripts/run-sidecar-all-smoke-tv.sh
+```
+
+Expected:
+
+```text
+AOSP_SM_COMPAT_SMOKE_OK
+ALL_SIDECAR_SMOKE_OK
+```
+
+Optional full validation:
+
+```sh
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+CLIENTS=6 \
+ROUNDS=10 \
+./scripts/quick-check-tv.sh
+```
+
+Expected:
 
 ```text
 QUICK_CHECK_TV_OK
@@ -966,17 +1224,122 @@ QUICK_CHECK_TV_OK
 
 ---
 
-## Next technical directions
+## 31. Next high-level milestones
 
-Good next steps:
+### Milestone 3: real Android/libbinder client
 
-1. reduce or gate Binder mmap shim debug noise
-2. add a service-manager protocol version command
-3. add structured status output for `listServices`
-4. add persistent sidecar launcher script
-5. add controlled restart/watchdog for `mini_servicemgr`
-6. investigate why only `/dev/binder` appears on this target
-7. evaluate a minimal Android `servicemanager` compatibility layer
-8. evaluate ashmem or memfd compatibility
-9. experiment with a minimal Android-native Binder client
-10. only after that, consider higher-level Android userspace experiments
+Goal:
+
+```text
+Compile or port a native Android-style libbinder client that uses:
+  defaultServiceManager()
+  checkService("test.aosp")
+  getService("test.aosp")
+  transact()
+```
+
+Purpose:
+
+```text
+Move from a manual C probe to real Android/libbinder client behavior.
+```
+
+### Milestone 4: AIDL-style echo interface
+
+Goal:
+
+```text
+Generate or mimic an AIDL echo interface and validate client/service calls through the Binder sidecar.
+```
+
+### Milestone 5: Android servicemanager experiment
+
+Goal:
+
+```text
+Try running a real or lightly patched Android servicemanager against webOS Binder.
+```
+
+### Milestone 6: memory compatibility
+
+Goal:
+
+```text
+Investigate ashmem/memfd compatibility required by larger Android userspace components.
+```
+
+### Milestone 7: Binder domains
+
+Goal:
+
+```text
+Investigate why /dev/hwbinder and /dev/vndbinder are not created on this LG webOS target.
+```
+
+### Milestone 8: minimal Android-native userspace island
+
+Goal:
+
+```text
+Run a small cluster of Android-native binaries using Binder IPC on webOS.
+```
+
+Immediate recommended next step:
+
+```text
+Milestone 3: real Android/libbinder client
+```
+
+---
+
+## 32. Commands to close this milestone
+
+Copy this file into the repo as `README_AOSP_SM_COMPAT_V0.md` first.
+
+Then:
+
+```sh
+cd ~/disk/webos-dirty-binder
+
+git checkout milestone/aosp-sm-compat-v0
+git status --short
+
+git add README_AOSP_SM_COMPAT_V0.md
+git commit -m "docs: document AOSP ServiceManager compatibility v0 milestone"
+
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+CLIENTS=6 \
+ROUNDS=10 \
+./scripts/run-sidecar-all-smoke-tv.sh
+
+git push origin milestone/aosp-sm-compat-v0
+```
+
+Merge into `main`:
+
+```sh
+git checkout main
+git pull --ff-only origin main
+
+git merge --no-ff milestone/aosp-sm-compat-v0 \
+  -m "merge: AOSP ServiceManager compatibility milestone"
+
+git push origin main
+```
+
+Tag the milestone:
+
+```sh
+git tag -a aosp-sm-compat-v0 \
+  -m "AOSP IServiceManager compatibility v0 on LG webOS Binder sidecar"
+
+git push origin aosp-sm-compat-v0
+```
+
+Final check:
+
+```sh
+git status --short
+git log --oneline -12 --decorate
+```
