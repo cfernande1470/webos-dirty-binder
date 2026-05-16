@@ -21,12 +21,13 @@
 #define SC_MAGIC 0x42534f57U
 #define SC_CODE_ADD_SERVICE 0x53434144U
 #define SC_CODE_GET_SERVICE 0x53434745U
+#define SC_CODE_LIST_SERVICES 0x53434c53U
 #define SC_CODE_ECHO        0x4543484fU
 #define SC_CODE_PING        0x50494e47U
 
 #define MAX_SERVICES 16
 #define NAME_LEN 64
-#define PAYLOAD_LEN 128
+#define PAYLOAD_LEN 1024
 #define SIDE_BC_REQUEST_DEATH_NOTIFICATION_RAW 0x400c630eU
 #define SIDE_BR_DEAD_BINDER_RAW 0x8008720fU
 
@@ -531,6 +532,38 @@ static void registry_dump(void)
     }
 }
 
+static void registry_list_text(char *out, size_t out_len)
+{
+    int i;
+    size_t used = 0;
+
+    if (!out || out_len == 0)
+        return;
+
+    out[0] = '\0';
+
+    for (i = 0; i < MAX_SERVICES; i++) {
+        int n;
+
+        if (!services[i].used)
+            continue;
+
+        n = snprintf(out + used, out_len - used, "%s\n", services[i].name);
+        if (n < 0)
+            break;
+
+        if ((size_t)n >= out_len - used) {
+            used = out_len - 1;
+            out[used] = '\0';
+            break;
+        }
+
+        used += (size_t)n;
+    }
+
+    if (out[0] == '\0')
+        snprintf(out, out_len, "(empty)\n");
+}
 static uint32_t first_handle_from_transaction(struct binder_transaction_data *tr)
 {
     if (!tr->offsets_size || !tr->data.ptr.buffer || !tr->data.ptr.offsets)
@@ -735,7 +768,20 @@ static int process_sm_transaction(int fd, struct binder_transaction_data *tr)
         return send_text_reply(fd, tr->data.ptr.buffer, "ADD OK", 0, "sm-server addService reply");
     }
 
-    if (tr->code == SC_CODE_GET_SERVICE) {
+    
+    if (tr->code == SC_CODE_LIST_SERVICES) {
+        char list[PAYLOAD_LEN];
+
+        registry_list_text(list, sizeof(list));
+        printf("sm-server: listServices\n%s", list);
+
+        return send_text_reply(fd,
+                               tr->data.ptr.buffer,
+                               list,
+                               0,
+                               "sm-server listServices reply");
+    }
+if (tr->code == SC_CODE_GET_SERVICE) {
         struct sc_get_msg *msg;
         uint32_t handle;
 
@@ -1053,6 +1099,112 @@ static int get_service_handle(int fd, const char *name, uint32_t *out_handle)
     }
 }
 
+static int run_list_services_client(void)
+{
+    int fd = binder_open_and_init();
+    uint8_t writebuf[1024];
+    uint8_t readbuf[8192];
+    uint8_t *p = writebuf;
+    uint32_t cmd;
+    uint32_t magic = SC_MAGIC;
+    struct binder_transaction_data tr;
+    int first = 1;
+
+    memset(&tr, 0, sizeof(tr));
+    tr.target.handle = 0;
+    tr.code = SC_CODE_LIST_SERVICES;
+    tr.flags = TF_ACCEPT_FDS;
+    tr.data_size = sizeof(magic);
+    tr.offsets_size = 0;
+    tr.data.ptr.buffer = (binder_uintptr_t)&magic;
+    tr.data.ptr.offsets = 0;
+
+    cmd = BC_TRANSACTION;
+    append_u32(&p, cmd);
+    append_bytes(&p, &tr, sizeof(tr));
+
+    for (;;) {
+        int n;
+
+        if (first) {
+            n = binder_write_read(fd,
+                                  writebuf,
+                                  (size_t)(p - writebuf),
+                                  readbuf,
+                                  sizeof(readbuf),
+                                  "listServices call");
+            first = 0;
+        } else {
+            n = binder_write_read(fd,
+                                  NULL,
+                                  0,
+                                  readbuf,
+                                  sizeof(readbuf),
+                                  "listServices wait");
+        }
+
+        if (n < 0)
+            return 1;
+
+        uint8_t *ptr = readbuf;
+        uint8_t *end = readbuf + n;
+
+        while (ptr + sizeof(uint32_t) <= end) {
+            uint32_t rcmd;
+
+            memcpy(&rcmd, ptr, sizeof(rcmd));
+            ptr += sizeof(rcmd);
+
+            printf("listServices got %s 0x%08x\n", cmd_name(rcmd), rcmd);
+
+            if (rcmd == BR_REPLY) {
+                struct binder_transaction_data reply;
+
+                if (ptr + sizeof(reply) > end)
+                    return 1;
+
+                memcpy(&reply, ptr, sizeof(reply));
+                ptr += sizeof(reply);
+
+                if (reply.data.ptr.buffer &&
+                    reply.data_size >= sizeof(struct sc_text_reply)) {
+                    struct sc_text_reply *txt =
+                        (struct sc_text_reply *)(uintptr_t)reply.data.ptr.buffer;
+
+                    printf("list-services reply status=%u\n", txt->status);
+                    printf("%s", txt->text);
+
+                    binder_free_buffer(fd, reply.data.ptr.buffer);
+                    return txt->status == 0 ? 0 : 1;
+                }
+
+                if (reply.data.ptr.buffer)
+                    binder_free_buffer(fd, reply.data.ptr.buffer);
+
+                return 1;
+            }
+
+            if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY) {
+                fprintf(stderr, "listServices got failure reply cmd=0x%08x\n", rcmd);
+                return 1;
+            }
+
+            if (rcmd == BR_NOOP || rcmd == BR_TRANSACTION_COMPLETE)
+                continue;
+
+            if (rcmd == BR_INCREFS ||
+                rcmd == BR_ACQUIRE ||
+                rcmd == BR_RELEASE ||
+                rcmd == BR_DECREFS) {
+                if (handle_ref_cmd(fd, rcmd, &ptr, end, "listServices") != 0)
+                    return 1;
+                continue;
+            }
+
+            printf("listServices unhandled cmd=0x%08x\n", rcmd);
+        }
+    }
+}
 static int add_service(int fd, const char *name)
 {
     uint8_t writebuf[1024];
@@ -1411,7 +1563,10 @@ int main(int argc, char **argv)
         return run_echo_client(name, message);
     }
 
-    if (argc >= 2 && strcmp(argv[1], "sm-server") == 0)
+    
+    if (strcmp(prog, "list_services") == 0)
+        return run_list_services_client();
+if (argc >= 2 && strcmp(argv[1], "sm-server") == 0)
         return run_sm_server();
 
     if (argc >= 2 && strcmp(argv[1], "echo-service") == 0) {
@@ -1419,7 +1574,10 @@ int main(int argc, char **argv)
         return run_echo_service(name);
     }
 
-    if (argc >= 2 && strcmp(argv[1], "echo-client") == 0) {
+    
+    if (argc >= 2 && strcmp(argv[1], "list-services") == 0)
+        return run_list_services_client();
+if (argc >= 2 && strcmp(argv[1], "echo-client") == 0) {
         const char *name = argc > 2 ? argv[2] : "test.echo";
         const char *message = argc > 3 ? argv[3] : "hello from echo_client";
         return run_echo_client(name, message);

@@ -29,6 +29,7 @@ echo "Using CC=$CC"
 cp build/sidecar_binder_static build/mini_servicemgr_static
 cp build/sidecar_binder_static build/echo_service_static
 cp build/sidecar_binder_static build/echo_client_static
+cp build/sidecar_binder_static build/list_services_static
 
 file build/sidecar_binder_static || true
-ls -lh build/sidecar_binder_static build/mini_servicemgr_static build/echo_service_static build/echo_client_static
+ls -lh build/sidecar_binder_static build/mini_servicemgr_static build/echo_service_static build/echo_client_static build/list_services_static
