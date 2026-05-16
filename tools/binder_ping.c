@@ -448,6 +448,180 @@ static int parse_and_print_objects(const char *who, struct binder_transaction_da
     return 0;
 }
 
+static uint32_t object_first_handle_from_transaction(struct binder_transaction_data *tr)
+{
+    if (!tr->offsets_size || !tr->data.ptr.buffer || !tr->data.ptr.offsets)
+        return 0;
+
+    if (tr->offsets_size < sizeof(binder_size_t))
+        return 0;
+
+    binder_size_t *offp = (binder_size_t *)(uintptr_t)tr->data.ptr.offsets;
+    binder_size_t off = offp[0];
+
+    if (off + sizeof(struct flat_binder_object) > tr->data_size)
+        return 0;
+
+    struct flat_binder_object *obj =
+        (struct flat_binder_object *)((uint8_t *)(uintptr_t)tr->data.ptr.buffer + off);
+
+    if (obj->type != BINDER_TYPE_HANDLE)
+        return 0;
+
+    return obj->handle;
+}
+
+static int object_client_reply_to_callback(int fd, struct binder_transaction_data *tr)
+{
+    const char reply[] = "CLIENT CALLBACK OK";
+    uint8_t writebuf[1024];
+    uint8_t *wp = writebuf;
+    uint32_t wcmd;
+    struct binder_transaction_data reply_tr;
+    struct binder_write_read bwr;
+
+    printf("object-client callback transaction code=0x%x flags=0x%x sender_pid=%d sender_euid=%u data_size=%" PRIu64 " offsets_size=%" PRIu64 " buffer=0x%" PRIx64 "\n",
+           tr->code,
+           tr->flags,
+           tr->sender_pid,
+           tr->sender_euid,
+           (uint64_t)tr->data_size,
+           (uint64_t)tr->offsets_size,
+           (uint64_t)tr->data.ptr.buffer);
+
+    if (tr->data.ptr.buffer && tr->data_size > 0) {
+        printf("object-client callback payload: ");
+        fwrite((const void *)(uintptr_t)tr->data.ptr.buffer, 1, tr->data_size, stdout);
+        printf("\n");
+    }
+
+    wcmd = BC_FREE_BUFFER;
+    append_u32(&wp, wcmd);
+    append_bytes(&wp, &tr->data.ptr.buffer, sizeof(tr->data.ptr.buffer));
+
+    wcmd = BC_REPLY;
+    append_u32(&wp, wcmd);
+
+    memset(&reply_tr, 0, sizeof(reply_tr));
+    reply_tr.data_size = sizeof(reply);
+    reply_tr.offsets_size = 0;
+    reply_tr.data.ptr.buffer = (binder_uintptr_t)reply;
+    reply_tr.data.ptr.offsets = 0;
+
+    append_bytes(&wp, &reply_tr, sizeof(reply_tr));
+
+    memset(&bwr, 0, sizeof(bwr));
+    bwr.write_size = (size_t)(wp - writebuf);
+    bwr.write_buffer = (binder_uintptr_t)writebuf;
+    bwr.read_size = 0;
+    bwr.read_buffer = 0;
+
+    printf("object-client sending callback reply write_size=%" PRIu64 "\n",
+           (uint64_t)bwr.write_size);
+
+    if (ioctl(fd, BINDER_WRITE_READ, &bwr) < 0) {
+        fprintf(stderr, "object-client callback reply ioctl failed: errno=%d (%s)\n",
+                errno, strerror(errno));
+        return -1;
+    }
+
+    printf("object-client callback reply write_consumed=%" PRIu64 " read_consumed=%" PRIu64 "\n",
+           (uint64_t)bwr.write_consumed,
+           (uint64_t)bwr.read_consumed);
+
+    return 0;
+}
+
+static int object_server_call_client_handle(int fd, uint32_t handle)
+{
+    const char payload[] = "CALLBACK from object-server";
+    uint8_t writebuf[1024];
+    uint8_t readbuf[8192];
+    uint8_t *wp = writebuf;
+    uint32_t wcmd;
+    struct binder_transaction_data tr;
+    int first = 1;
+
+    printf("object-server calling client handle=%u\n", handle);
+
+    memset(&tr, 0, sizeof(tr));
+    tr.target.handle = handle;
+    tr.code = 0x43424b31U;
+    tr.flags = TF_ACCEPT_FDS;
+    tr.data_size = sizeof(payload);
+    tr.offsets_size = 0;
+    tr.data.ptr.buffer = (binder_uintptr_t)payload;
+    tr.data.ptr.offsets = 0;
+
+    wcmd = BC_TRANSACTION;
+    append_u32(&wp, wcmd);
+    append_bytes(&wp, &tr, sizeof(tr));
+
+    for (;;) {
+        int n;
+
+        if (first) {
+            n = binder_write_read(fd, writebuf, (size_t)(wp - writebuf),
+                                  readbuf, sizeof(readbuf), "object-server_callback_call");
+            first = 0;
+        } else {
+            n = binder_write_read(fd, NULL, 0,
+                                  readbuf, sizeof(readbuf), "object-server_callback_wait");
+        }
+
+        if (n < 0)
+            return -1;
+
+        uint8_t *ptr = readbuf;
+        uint8_t *end = readbuf + n;
+
+        while (ptr + sizeof(uint32_t) <= end) {
+            uint32_t rcmd;
+            memcpy(&rcmd, ptr, sizeof(rcmd));
+            ptr += sizeof(rcmd);
+
+            printf("object-server callback got cmd=0x%08x\n", rcmd);
+
+            if (rcmd == BR_TRANSACTION_COMPLETE) {
+                printf("object-server callback BR_TRANSACTION_COMPLETE\n");
+            } else if (rcmd == BR_NOOP) {
+                printf("object-server callback BR_NOOP\n");
+            } else if (rcmd == BR_REPLY) {
+                struct binder_transaction_data reply;
+
+                if (ptr + sizeof(reply) > end) {
+                    fprintf(stderr, "object-server callback: truncated BR_REPLY\n");
+                    return -1;
+                }
+
+                memcpy(&reply, ptr, sizeof(reply));
+                ptr += sizeof(reply);
+
+                printf("object-server callback BR_REPLY code=0x%x flags=0x%x data_size=%" PRIu64 " offsets_size=%" PRIu64 " buffer=0x%" PRIx64 "\n",
+                       reply.code,
+                       reply.flags,
+                       (uint64_t)reply.data_size,
+                       (uint64_t)reply.offsets_size,
+                       (uint64_t)reply.data.ptr.buffer);
+
+                if (reply.data.ptr.buffer && reply.data_size > 0) {
+                    printf("object-server callback reply payload: ");
+                    fwrite((const void *)(uintptr_t)reply.data.ptr.buffer, 1, reply.data_size, stdout);
+                    printf("\n");
+                }
+
+                binder_free_buffer(fd, reply.data.ptr.buffer);
+                return 0;
+            } else {
+                printf("object-server callback unhandled cmd=0x%08x\n", rcmd);
+            }
+        }
+    }
+
+    return 0;
+}
+
+
 static int object_server_process_readbuf(int fd, uint8_t *readbuf, int n)
 {
     uint8_t *ptr = readbuf;
@@ -489,6 +663,16 @@ static int object_server_process_readbuf(int fd, uint8_t *readbuf, int n)
 
             if (parse_and_print_objects("object-server", &tr) != 0)
                 return 1;
+
+            {
+                uint32_t callback_handle = object_first_handle_from_transaction(&tr);
+                if (callback_handle != 0) {
+                    if (object_server_call_client_handle(fd, callback_handle) != 0)
+                        return 1;
+                } else {
+                    printf("object-server: no callback handle found in transaction\n");
+                }
+            }
 
             wcmd = BC_FREE_BUFFER;
             append_u32(&wp, wcmd);
@@ -694,6 +878,19 @@ static int run_object_client(void)
 
             if (rcmd == BR_TRANSACTION_COMPLETE) {
                 printf("object-client BR_TRANSACTION_COMPLETE\n");
+            } else if (rcmd == BR_TRANSACTION) {
+                struct binder_transaction_data cb_tr;
+
+                if (ptr + sizeof(cb_tr) > end) {
+                    fprintf(stderr, "object-client: truncated callback BR_TRANSACTION\n");
+                    return 1;
+                }
+
+                memcpy(&cb_tr, ptr, sizeof(cb_tr));
+                ptr += sizeof(cb_tr);
+
+                if (object_client_reply_to_callback(fd, &cb_tr) != 0)
+                    return 1;
             } else if (rcmd == BR_REPLY) {
                 struct binder_transaction_data reply;
 
