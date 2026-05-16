@@ -71,7 +71,7 @@ if [ "$client_rc" -ne 0 ]; then
   exit "$client_rc"
 fi
 
-grep -q 'ANDROID_LIKE_INTERFACE_CONTRACT_OK' logs/android_like_service_client.log
+grep -q 'ANDROID_LIKE_ECHO_WIRE_HELPERS_OK' logs/android_like_service_client.log
 grep -q 'ANDROID_LIKE_AIDL_WIRE_OK' logs/android_like_service_client.log
 grep -q 'ANDROID_LIKE_API_CLIENT_OK' logs/android_like_service_client.log
 
@@ -85,3 +85,5 @@ grep -q 'ANDROID_LIKE_BN_ECHO_TRANSACTION_OK' logs/android_like_service_server.l
 
 echo "ANDROID_LIKE_SERVICE_SMOKE_OK"
 TVSH
+
+# 4F wire helpers marker

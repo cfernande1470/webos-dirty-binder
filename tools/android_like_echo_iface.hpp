@@ -11,6 +11,125 @@
 #define ANDROID_LIKE_ECHO_DESCRIPTOR "webos.dirtybinder.IEchoService"
 #define ANDROID_LIKE_TRANSACTION_ECHO_TEXT 1U
 
+namespace android_like_echo_wire {
+
+struct ParcelView {
+    const unsigned char *data;
+    size_t size;
+    size_t pos;
+};
+
+static inline size_t align4(size_t n)
+{
+    return (n + 3U) & ~3U;
+}
+
+static inline int readI32(ParcelView *v, int32_t *out)
+{
+    if (!v || !out || v->pos + sizeof(*out) > v->size)
+        return -1;
+
+    memcpy(out, v->data + v->pos, sizeof(*out));
+    v->pos += sizeof(*out);
+    return 0;
+}
+
+static inline int readString16Ascii(ParcelView *v, char *out, size_t out_len)
+{
+    int32_t len;
+    size_t bytes;
+    size_t padded;
+    size_t i;
+
+    if (!v || !out || out_len == 0)
+        return -1;
+
+    out[0] = '\0';
+
+    if (readI32(v, &len) != 0)
+        return -1;
+
+    if (len < 0)
+        return 0;
+
+    bytes = ((size_t)len + 1U) * 2U;
+    padded = align4(bytes);
+
+    if (v->pos + padded > v->size)
+        return -1;
+
+    for (i = 0; i < (size_t)len && i + 1 < out_len; i++) {
+        unsigned char lo = v->data[v->pos + i * 2U];
+        unsigned char hi = v->data[v->pos + i * 2U + 1U];
+
+        out[i] = hi == 0 ? (char)lo : '?';
+    }
+
+    out[i < out_len ? i : out_len - 1] = '\0';
+    v->pos += padded;
+    return 0;
+}
+
+static inline int writeEchoRequest(android::Parcel *data, const char *message)
+{
+    if (!data)
+        return -1;
+
+    if (data->writeInterfaceToken(ANDROID_LIKE_ECHO_DESCRIPTOR) != 0)
+        return -1;
+
+    if (data->writeCString(message ? message : "") != 0)
+        return -1;
+
+    return 0;
+}
+
+static inline int parseEchoRequest(const void *data,
+                                   size_t size,
+                                   const char **message_out,
+                                   char *descriptor,
+                                   size_t descriptor_len)
+{
+    ParcelView v;
+    int32_t strict_policy;
+
+    if (!data || !message_out || !descriptor || descriptor_len == 0)
+        return -1;
+
+    *message_out = "";
+
+    v.data = (const unsigned char *)data;
+    v.size = size;
+    v.pos = 0;
+
+    if (readI32(&v, &strict_policy) != 0)
+        return -1;
+
+    if (readString16Ascii(&v, descriptor, descriptor_len) != 0)
+        return -1;
+
+    if (strcmp(descriptor, ANDROID_LIKE_ECHO_DESCRIPTOR) != 0)
+        return -1;
+
+    if (v.pos >= v.size)
+        return -1;
+
+    *message_out = (const char *)(v.data + v.pos);
+    return 0;
+}
+
+static inline int readEchoReply(android::Parcel *reply,
+                                uint32_t *status,
+                                const char **text)
+{
+    if (!reply || !status || !text)
+        return -1;
+
+    return reply->readSidecarTextReply(status, text);
+}
+
+} // namespace android_like_echo_wire
+
 class IEchoService {
 public:
     virtual ~IEchoService() {}
@@ -39,17 +158,16 @@ public:
         if (out && out_len)
             out[0] = '\0';
 
-        if (data.writeInterfaceToken(ANDROID_LIKE_ECHO_DESCRIPTOR) != 0)
-            return -1;
-
-        if (data.writeCString(message ? message : "") != 0)
+        if (android_like_echo_wire::writeEchoRequest(&data, message) != 0)
             return -1;
 
         if (remote_->transact(ANDROID_LIKE_TRANSACTION_ECHO_TEXT, data, &reply) != 0)
             return 1;
 
-        if (reply.readSidecarTextReply(&status, &text) != 0)
+        if (android_like_echo_wire::readEchoReply(&reply, &status, &text) != 0)
             return -1;
+
+        printf("ANDROID_LIKE_ECHO_WIRE_HELPERS_OK\n");
 
         printf("Android-like echo reply status=%u text=%s\n",
                status,
@@ -86,11 +204,11 @@ public:
             return 1;
         }
 
-        if (parseEchoRequest(data,
-                             size,
-                             &message,
-                             descriptor,
-                             sizeof(descriptor)) != 0) {
+        if (android_like_echo_wire::parseEchoRequest(data,
+                                                size,
+                                                &message,
+                                                descriptor,
+                                                sizeof(descriptor)) != 0) {
             fprintf(stderr,
                     "Android-like BnEchoService bad interface token or parcel\n");
             return 1;
@@ -108,96 +226,6 @@ public:
     }
 
 private:
-    struct ParcelView {
-        const unsigned char *data;
-        size_t size;
-        size_t pos;
-    };
-
-    static size_t align4(size_t n)
-    {
-        return (n + 3U) & ~3U;
-    }
-
-    static int readI32(ParcelView *v, int32_t *out)
-    {
-        if (v->pos + sizeof(*out) > v->size)
-            return -1;
-
-        memcpy(out, v->data + v->pos, sizeof(*out));
-        v->pos += sizeof(*out);
-        return 0;
-    }
-
-    static int readString16Ascii(ParcelView *v, char *out, size_t out_len)
-    {
-        int32_t len;
-        size_t bytes;
-        size_t padded;
-        size_t i;
-
-        if (!out || out_len == 0)
-            return -1;
-
-        out[0] = '\0';
-
-        if (readI32(v, &len) != 0)
-            return -1;
-
-        if (len < 0)
-            return 0;
-
-        bytes = ((size_t)len + 1U) * 2U;
-        padded = align4(bytes);
-
-        if (v->pos + padded > v->size)
-            return -1;
-
-        for (i = 0; i < (size_t)len && i + 1 < out_len; i++) {
-            unsigned char lo = v->data[v->pos + i * 2U];
-            unsigned char hi = v->data[v->pos + i * 2U + 1U];
-
-            out[i] = hi == 0 ? (char)lo : '?';
-        }
-
-        out[i < out_len ? i : out_len - 1] = '\0';
-        v->pos += padded;
-        return 0;
-    }
-
-    static int parseEchoRequest(const void *data,
-                                size_t size,
-                                const char **message_out,
-                                char *descriptor,
-                                size_t descriptor_len)
-    {
-        ParcelView v;
-        int32_t strict_policy;
-
-        if (!data || !message_out || !descriptor || descriptor_len == 0)
-            return -1;
-
-        *message_out = "";
-
-        v.data = (const unsigned char *)data;
-        v.size = size;
-        v.pos = 0;
-
-        if (readI32(&v, &strict_policy) != 0)
-            return -1;
-
-        if (readString16Ascii(&v, descriptor, descriptor_len) != 0)
-            return -1;
-
-        if (strcmp(descriptor, ANDROID_LIKE_ECHO_DESCRIPTOR) != 0)
-            return -1;
-
-        if (v.pos >= v.size)
-            return -1;
-
-        *message_out = (const char *)(v.data + v.pos);
-        return 0;
-    }
 };
 
 static inline android::sp<IEchoService>
