@@ -1,43 +1,37 @@
 # webos-dirty-binder
 
-Experimental Android Binder IPC module for rooted LG webOS TVs.
+Experimental Android Binder IPC module and Binder sidecar for rooted LG webOS TVs.
 
-This repository explores whether the Android Binder driver can be built and loaded as an out-of-tree kernel module on LG webOS TV kernels, without flashing or replacing system partitions.
+This repository explores whether Android Binder IPC can be built, loaded, and used on LG webOS TV kernels as an out-of-tree module, without replacing the TV boot chain or system partitions.
 
 > **Status:** experimental research / proof of concept.  
-> **Do not install this module at boot.** Load it manually from `/tmp` while testing.
+> **Do not install this module at boot.** Load it manually while testing.
 
 ---
 
-## Current milestone
+## Current status
 
-The project has moved beyond basic Binder ioctls.
+The project now demonstrates a working Binder IPC stack on LG webOS:
 
-Confirmed working on the tested LG webOS TV target:
+- Binder kernel module loads successfully.
+- `/dev/binder` is created.
+- Basic Binder ioctls work.
+- Binder mmap works through an allocation shim.
+- A context manager can be registered.
+- Plain synchronous Binder transactions work.
+- Binder objects can be passed between processes.
+- Binder callbacks work.
+- A minimal Binder sidecar service manager works from internal storage.
+- A service can register itself by name.
+- A client can resolve that service by name.
+- A client can call the service through the returned Binder handle.
 
-- Load `binder.ko`
-- Create `/dev/binder`
-- `BINDER_VERSION`
-- `BINDER_SET_MAX_THREADS`
-- Binder `mmap()`
-- `BINDER_SET_CONTEXT_MGR`
-- `BC_ENTER_LOOPER`
-- Plain Binder transaction round-trip:
-  - client sends `BC_TRANSACTION`
-  - server receives `BR_TRANSACTION`
-  - server sends `BC_REPLY`
-  - client receives `BR_REPLY`
-  - client releases buffer with write-only `BC_FREE_BUFFER`
-- Binder object passing:
-  - client sends `BINDER_TYPE_BINDER`
-  - server receives it as `BINDER_TYPE_HANDLE`
-- Binder callback:
-  - server calls back into the client-exported Binder object
-  - client receives callback `BR_TRANSACTION`
-  - client replies with `BC_REPLY`
-  - server receives callback `BR_REPLY`
+The latest successful sidecar smoke test returned:
 
-This means the PoC now demonstrates real Binder IPC in both directions.
+```text
+CLIENT_EXIT=0
+echo-client reply status=0 text=echo-service reply from webOS sidecar
+```
 
 ---
 
@@ -60,73 +54,82 @@ webOS TV 6.2.0
 O20 platform
 ```
 
-Other LG webOS versions may require different kernel symbols, offsets, configs, or patches.
+Other LG webOS versions may need different kernel symbols, configs, offsets, or patches.
 
 ---
 
-## What this is
+## What this project is
 
-This is a kernel/Binder research project.
+This is a Binder IPC research project for webOS.
+
+It currently provides:
+
+- A dirty Binder kernel module for LG webOS.
+- Low-level Binder probes.
+- A Binder transaction test tool.
+- Binder object passing tests.
+- Binder callback tests.
+- A small sidecar service manager experiment.
+- An echo service and echo client using Binder handles.
 
 It is useful for:
 
-- Understanding Binder IPC on a non-Android Linux environment
-- Testing Binder transactions on webOS
-- Experimenting with Binder object passing
-- Experimenting with Binder callbacks
-- Building future Binder-to-webOS bridge experiments
-- Investigating whether small Android-native Binder services can run on webOS
+- Understanding Binder IPC outside Android.
+- Testing Binder object lifetime rules.
+- Experimenting with service registration and lookup.
+- Building a possible Binder-to-webOS bridge.
+- Preparing future experiments with Android-native userspace components.
 
 ---
 
-## What this is not
+## What this project is not
 
 This is **not**:
 
-- Android TV for LG webOS
-- Waydroid for LG webOS
-- Anbox for LG webOS
-- APK app support
-- A complete Android userspace
-- A graphics/audio/input compatibility layer
-- A safe production module
-- A boot-time service
+- Android TV for LG webOS.
+- Waydroid for LG webOS.
+- Anbox for LG webOS.
+- APK app support.
+- A complete Android userspace.
+- A graphics/audio/input compatibility layer.
+- A production-ready module.
+- A boot-time service.
 
-The module currently does **not** provide:
+The project does **not** currently provide:
 
 - `ashmem`
 - `binderfs`
 - Android `init`
-- Android service manager integration
-- SELinux policy
-- Android HALs
-- Android framework services
+- Android `servicemanager`
+- Android `zygote`
+- ART
+- `system_server`
+- PackageManager
 - SurfaceFlinger
 - AudioFlinger
-- ActivityManager
-- PackageManager
 - InputFlinger
-- Hardware Composer
+- Android HALs
+- SELinux policy
+- APK installation support
 
 ---
 
 ## Safety warning
 
-This is an out-of-tree kernel module for a TV.
+This project loads an out-of-tree kernel module on a TV.
 
 A bad Binder transaction can crash the kernel.
 
 Recommended safety rules:
 
-- Load only from `/tmp`
-- Do not install into boot scripts
-- Do not modify boot, recovery, kernel, rootfs, or tvservice partitions
-- Reboot between risky tests
-- Keep SSH access working
-- Keep the TV on a trusted local network
-- Do not expose SSH or Binder experiments to the internet
-
-If the module Oopses, reboot the TV before continuing.
+- Load only manually while testing.
+- Keep the sidecar under internal user storage, not system partitions.
+- Do not install into boot scripts yet.
+- Do not modify `kernel`, `rootfs`, `tvservice`, recovery, boot, or other system partitions.
+- Reboot after a kernel Oops before continuing.
+- Keep SSH access working.
+- Keep the TV on a trusted LAN.
+- Do not expose these experiments to the internet.
 
 ---
 
@@ -135,15 +138,21 @@ If the module Oopses, reboot the TV before continuing.
 Common files:
 
 ```text
-scripts/build-module.sh       Build the dirty Binder kernel module
-scripts/load-binder-tv.sh     Load the module on the TV
-scripts/build-probe.sh        Build the basic Binder probe
-scripts/build-ping.sh         Build the Binder transaction/object test tool
-tools/binder_probe.c          Basic Binder ioctl probe
-tools/binder_ping.c           Binder IPC test tool
-patches/                      Kernel/module patches
-artifacts/                    Built module artifacts
-docs/                         Notes and milestone documentation
+scripts/build-module.sh            Build the dirty Binder kernel module
+scripts/load-binder-tv.sh          Load Binder on the TV
+scripts/build-probe.sh             Build the basic Binder probe
+scripts/build-ping.sh              Build Binder transaction/object tests
+scripts/build-sidecar.sh           Build sidecar service manager tools
+scripts/install-sidecar-tv.sh      Install sidecar files to the TV
+scripts/run-sidecar-smoke-tv.sh    Run the sidecar smoke test on the TV
+
+tools/binder_probe.c               Basic Binder ioctl probe
+tools/binder_ping.c                Low-level Binder transaction/object/callback tests
+tools/sidecar_binder.c             Mini service manager, echo service, echo client
+
+patches/                           Kernel/module patches
+artifacts/                         Built module artifacts
+docs/                              Notes and milestone documentation
 ```
 
 Generated files under `build/` should normally not be committed.
@@ -161,39 +170,37 @@ sudo apt update
 sudo apt install -y build-essential gcc-aarch64-linux-gnu git python3
 ```
 
-The build host used during testing was a NanoPi running Ubuntu 24.04 on arm64.
+The tested build host was a NanoPi running Ubuntu 24.04 on arm64.
 
 ---
 
-## Build module
+## Build Binder module
 
-From the repo root:
+From the repository root:
 
 ```bash
 cd ~/disk/webos-dirty-binder
 ./scripts/build-module.sh
 ```
 
-The generated module is expected at:
+Expected module:
 
 ```text
 build/linux-4.4.84/drivers/android/binder.ko
 ```
 
-A copy may also be placed under `artifacts/`.
-
 ---
 
-## Build test tools
+## Build low-level test tools
 
-Build the basic probe:
+Build the basic Binder probe:
 
 ```bash
 cd ~/disk/webos-dirty-binder
 ./scripts/build-probe.sh
 ```
 
-Build the Binder IPC test tool:
+Build the Binder transaction/object/callback tool:
 
 ```bash
 cd ~/disk/webos-dirty-binder
@@ -209,75 +216,184 @@ build/binder_ping_static
 
 ---
 
-## Copy files to TV
+## Build sidecar tools
 
-Replace the IP address with your TV IP.
+Build the sidecar service manager, echo service, and echo client:
+
+```bash
+cd ~/disk/webos-dirty-binder
+./scripts/build-sidecar.sh
+```
+
+Expected outputs:
+
+```text
+build/sidecar_binder_static
+build/mini_servicemgr_static
+build/echo_service_static
+build/echo_client_static
+```
+
+---
+
+## Install sidecar to internal storage
+
+Recommended sidecar location on the tested TV:
+
+```text
+/media/internal/android-sidecar
+```
+
+This is preferred over `/home/root/android-sidecar` because `/media/internal` has more free space on the tested device.
+
+Install:
 
 ```bash
 cd ~/disk/webos-dirty-binder
 
-TV_IP=192.168.2.121
-
-scp build/linux-4.4.84/drivers/android/binder.ko root@$TV_IP:/tmp/binder-dirty.ko
-scp scripts/load-binder-tv.sh root@$TV_IP:/tmp/load-binder-tv.sh
-scp build/binder_probe_static root@$TV_IP:/tmp/binder_probe
-scp build/binder_ping_static root@$TV_IP:/tmp/binder_ping
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/install-sidecar-tv.sh
 ```
 
----
-
-## Load module on TV
-
-```bash
-ssh root@192.168.2.121
-cd /tmp
-chmod +x /tmp/load-binder-tv.sh /tmp/binder_probe /tmp/binder_ping
-/tmp/load-binder-tv.sh /tmp/binder-dirty.ko
-```
-
-Expected:
+Installed layout:
 
 ```text
-/dev/binder exists
-binder listed in /proc/modules
+/media/internal/android-sidecar/
+  bin/
+    mini_servicemgr
+    echo_service
+    echo_client
+  modules/
+    binder.ko
+  logs/
+    mini_servicemgr.log
+    echo_service.log
+    echo_client.log
+  run/
+    mini_servicemgr.pid
+    echo_service.pid
+    echo_client.exit
+  load-binder-tv.sh
 ```
 
-Check:
-
-```bash
-ls -l /dev/binder
-grep binder /proc/modules
-```
-
----
-
-## Basic probe
-
-```bash
-/tmp/binder_probe
-echo "probe_exit=$?"
-```
-
-Expected:
+Current sidecar size is small:
 
 ```text
-BINDER_VERSION protocol_version=8
-BINDER_SET_MAX_THREADS ok
-probe_exit=0
+2.9M /media/internal/android-sidecar
 ```
 
 ---
 
-## Plain transaction test
+## Run sidecar smoke test
 
-Start the server:
+From the build host:
+
+```bash
+cd ~/disk/webos-dirty-binder
+
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/run-sidecar-smoke-tv.sh
+```
+
+Expected result:
+
+```text
+CLIENT_EXIT=0
+echo-client reply status=0 text=echo-service reply from webOS sidecar
+```
+
+The smoke test performs:
+
+```text
+1. Load binder.ko if /dev/binder does not exist.
+2. Start mini_servicemgr as Binder context manager.
+3. Start echo_service.
+4. echo_service calls addService("test.echo").
+5. mini_servicemgr stores test.echo -> handle=1.
+6. echo_client calls getService("test.echo").
+7. mini_servicemgr returns a Binder handle.
+8. echo_client acquires the returned handle.
+9. echo_client calls the service handle.
+10. echo_service receives the transaction.
+11. echo_service replies.
+12. echo_client receives the reply and exits with 0.
+```
+
+---
+
+## Confirmed sidecar smoke log
+
+Successful module load:
+
+```text
+Loading /media/internal/android-sidecar/modules/binder.ko
+Loaded:
+binder 118784 0 [permanent], Live 0xffffffbffc35f000 (O)
+crw-------    1 root     root       10,  53 May 16 04:20 /dev/binder
+CLIENT_EXIT=0
+```
+
+Successful service registration:
+
+```text
+sm-server BR_TRANSACTION code=0x53434144 sender_pid=3531 sender_euid=0 data_size=96 offsets_size=8
+object from txn: offset=72 type=0x73682a85 BINDER_TYPE_HANDLE handle=1 binder=0x1 cookie=0x0
+sm-server BC_ACQUIRE service handle: cmd=0x40046305 handle=1
+sm-server BC_ACQUIRE service handle: write_consumed=8 read_consumed=0
+sm-server: addService name=test.echo handle=1
+sm-server registry:
+  test.echo -> handle=1
+```
+
+Successful service lookup:
+
+```text
+sm-server BR_TRANSACTION code=0x53434745 sender_pid=3587 sender_euid=0 data_size=72 offsets_size=0
+sm-server: getService name=test.echo handle=1
+sm-server: replying with handle=1 status=0
+sm-server getService reply: write_consumed=80 read_consumed=0
+```
+
+Successful client handle acquisition:
+
+```text
+getService got BR_REPLY 0x80407203
+object from txn: offset=8 type=0x73682a85 BINDER_TYPE_HANDLE handle=1 binder=0x1 cookie=0x0
+getService: name=test.echo got handle=1
+getService BC_ACQUIRE returned handle: cmd=0x40046305 handle=1
+getService BC_ACQUIRE returned handle: write_consumed=8 read_consumed=0
+```
+
+Successful service call:
+
+```text
+echo-client: calling handle=1 message=hello from sidecar smoke
+echo-client got BR_REPLY 0x80407203
+echo-client reply status=0 text=echo-service reply from webOS sidecar
+```
+
+Successful service-side receive:
+
+```text
+echo-service BR_TRANSACTION code=0x4543484f sender_pid=3587 sender_euid=0 data_size=25
+echo-service request payload: hello from sidecar smoke
+echo-service reply: write_consumed=80 read_consumed=0
+```
+
+---
+
+## Low-level Binder transaction test
+
+Start server on the TV:
 
 ```bash
 cd /tmp
 ./binder_ping server
 ```
 
-In another SSH session, run the client:
+In another SSH session:
 
 ```bash
 cd /tmp
@@ -294,7 +410,7 @@ free_buffer: write_consumed=12 read_consumed=0
 
 ---
 
-## Object passing test
+## Binder object passing test
 
 Start object server:
 
@@ -303,7 +419,7 @@ cd /tmp
 ./binder_ping object-server
 ```
 
-In another SSH session, run object client:
+In another SSH session:
 
 ```bash
 cd /tmp
@@ -313,16 +429,20 @@ cd /tmp
 Expected server result:
 
 ```text
-object-server object[0]: ... BINDER_TYPE_HANDLE ... handle=1
+object-server object[0]: offset=0 type=0x73682a85 BINDER_TYPE_HANDLE flags=0x00000100 binder=0x1 handle=1 cookie=0x0
 ```
 
-This confirms that the client sent a local `BINDER_TYPE_BINDER` object and the Binder driver translated it into a remote `BINDER_TYPE_HANDLE`.
+This confirms:
+
+```text
+client BINDER_TYPE_BINDER -> server BINDER_TYPE_HANDLE
+```
 
 ---
 
-## Callback test
+## Binder callback test
 
-The current `object-server` / `object-client` flow also tests callback behavior.
+The `object-server` / `object-client` flow also demonstrates callbacks.
 
 Expected sequence:
 
@@ -337,22 +457,17 @@ server replies to original client transaction
 client receives OBJECT OK
 ```
 
-Expected server log fragment:
+Expected server fragment:
 
 ```text
-object-server object[0]: offset=0 type=0x73682a85 BINDER_TYPE_HANDLE flags=0x00000100 binder=0x1 handle=1 cookie=0x0
 object-server calling client handle=1
 object-server callback BR_REPLY
 object-server callback reply payload: CLIENT CALLBACK OK
 ```
 
-Expected client log fragment:
+Expected client fragment:
 
 ```text
-object-client BR_INCREFS ...
-object-client BC_INCREFS_DONE ...
-object-client BR_ACQUIRE ...
-object-client BC_ACQUIRE_DONE ...
 object-client callback transaction code=0x43424b31
 object-client callback payload: CALLBACK from object-server
 object-client callback reply write_consumed=80 read_consumed=0
@@ -383,11 +498,9 @@ This keeps `sender_euid` meaningful for the userspace task issuing the ioctl and
 
 ### Binder mmap allocation shim
 
-The module uses a Binder mmap allocation shim to avoid allocation/page mapping failures on this kernel.
+The module uses a Binder mmap allocation shim.
 
-The shim allocates a page and inserts it into the userspace VMA with `vm_insert_page()`.
-
-Observed successful log pattern:
+Observed successful pattern:
 
 ```text
 binder_alloc_shim: before __get_free_page
@@ -405,34 +518,52 @@ The server must process the read buffer returned by the enter-looper call.
 
 ### `BC_FREE_BUFFER` should be write-only
 
-After receiving a `BR_REPLY`, the client releases the reply buffer using `BC_FREE_BUFFER`.
-
-This must be sent write-only:
+After receiving `BR_REPLY`, release the reply buffer using write-only `BC_FREE_BUFFER`:
 
 ```c
 read_size = 0;
 read_buffer = 0;
 ```
 
-Otherwise the client can wait for process work without being a looper.
+Otherwise the process can block waiting for Binder work without being a looper.
 
 ### Binder object refcount commands
 
-When exporting a Binder object, the client can receive commands such as:
+When exporting a Binder object, the owner can receive:
 
 ```text
 BR_INCREFS
 BR_ACQUIRE
 ```
 
-The client must consume their `binder_ptr_cookie` payloads and respond with:
+The owner must consume their `binder_ptr_cookie` payloads and respond with:
 
 ```text
 BC_INCREFS_DONE
 BC_ACQUIRE_DONE
 ```
 
-Otherwise the parser desynchronizes and payload words are mistaken for Binder commands.
+Otherwise the command parser desynchronizes.
+
+### Service manager handle lifetime
+
+The sidecar service manager must acquire service handles it stores:
+
+```text
+BC_ACQUIRE service handle
+```
+
+The client must also acquire a handle received through `getService()` before freeing the reply buffer:
+
+```text
+getService BC_ACQUIRE returned handle
+```
+
+Without these acquisitions, later calls can fail with:
+
+```text
+BR_FAILED_REPLY
+```
 
 ---
 
@@ -445,82 +576,71 @@ Confirmed:
 - Binder mmap
 - Context manager
 - Blocking Binder server loop
-- Synchronous client transaction
-- Synchronous server reply
-- Buffer free
+- Synchronous Binder transactions
+- Synchronous replies
+- Write-only buffer free
 - Binder object passing
-- Refcount command handling
-- Callback transaction
-- Callback reply
+- Binder callbacks
+- Binder refcount command handling
+- Internal-storage sidecar
+- Mini service manager
+- `addService(name, binder)`
+- `getService(name) -> handle`
+- Client call through returned handle
+- Service response through Binder
 
 Not yet confirmed:
 
 - `hwbinder`
 - `vndbinder`
-- Binder service manager compatibility
-- AOSP `servicemanager`
-- Android `libbinder` userspace
+- Binder service manager compatibility with AOSP
+- Android `libbinder` userspace binaries
+- Android `servicemanager`
 - Death notifications
 - File descriptor transfer
-- Stress testing
+- Multiple services
 - Multiple clients
-- Multiple exported objects
-- Handle reuse/lifetime cleanup
-- Real Android-native daemons
+- Handle cleanup/release lifecycle
+- Stress testing
+- Android-native daemons
+- APK support
 
 ---
 
 ## Suggested next milestones
 
-1. Split `binder_ping` into clearer subcommands:
-   - `ping-server`
-   - `ping-client`
-   - `object-server`
-   - `object-client`
-   - `callback-server`
-   - `callback-client`
-   - `stress`
+1. Add sidecar lifecycle scripts:
+   - `start.sh`
+   - `stop.sh`
+   - `status.sh`
 
-2. Add automated exit conditions so servers can terminate after one transaction.
+2. Add multi-service support:
+   - register more than one service
+   - list registered services
+   - replace service by name
+   - handle service death
 
-3. Add a stress mode:
-   - repeated transactions
-   - repeated object exports
-   - repeated callbacks
-   - forked clients
+3. Add a clean protocol:
+   - `ADD_SERVICE`
+   - `GET_SERVICE`
+   - `LIST_SERVICES`
+   - `CALL`
+   - structured status codes
 
 4. Add Binder death notification tests:
    - `BC_REQUEST_DEATH_NOTIFICATION`
    - `BR_DEAD_BINDER`
    - `BC_CLEAR_DEATH_NOTIFICATION`
 
-5. Test FD passing:
+5. Add file descriptor passing:
    - `BINDER_TYPE_FD`
 
-6. Try a minimal AOSP-style Binder service manager experiment.
+6. Try Android-native userspace components:
+   - Android `libbinder`
+   - Android `service` command
+   - AOSP `servicemanager`
 
 7. Prototype a Binder-to-webOS Luna Bus bridge.
-
----
-
-## Git workflow
-
-Recommended flow for milestones:
-
-```bash
-git status --short
-git add README.md scripts/build-module.sh scripts/build-ping.sh tools/binder_ping.c
-git commit -m "Describe milestone"
-git push origin HEAD:main
-```
-
-Avoid committing generated files unless intentionally publishing binaries:
-
-```text
-build/
-*.o
-*.ko
-```
 
 ---
 
@@ -528,18 +648,39 @@ build/
 
 ### `/dev/binder` does not exist
 
-The module is not loaded, or the TV was rebooted.
+The module is not loaded, or the TV rebooted.
 
 Load it again:
 
 ```bash
-cd /tmp
-./load-binder-tv.sh /tmp/binder-dirty.ko
+cd /media/internal/android-sidecar
+./load-binder-tv.sh modules/binder.ko
 ```
 
 ### `open /dev/binder: No such file or directory`
 
 Same as above: reload the module.
+
+### `BINDER_SET_CONTEXT_MGR already set`
+
+A previous process is still holding the Binder context manager.
+
+Stop sidecar processes:
+
+```bash
+killall mini_servicemgr 2>/dev/null || true
+killall echo_service 2>/dev/null || true
+killall echo_client 2>/dev/null || true
+killall binder_ping 2>/dev/null || true
+```
+
+If it still fails, reboot the TV.
+
+### `BR_FAILED_REPLY` after getService
+
+Check handle lifetime.
+
+The service manager must acquire the stored service handle, and the client must acquire the returned handle before freeing the reply buffer.
 
 ### `scp: dest open "/tmp/binder_ping": Failure`
 
@@ -553,24 +694,33 @@ ssh root@TV_IP 'chmod +x /tmp/binder_ping'
 
 ### Kernel Oops during transaction
 
-Reboot before continuing.
+Reboot before continuing:
 
 ```bash
 ssh root@TV_IP 'sync; reboot'
 ```
 
-Then verify that the module you load includes the `current_euid()` transaction fix.
+Then verify that the loaded module includes the `current_euid()` transaction fix.
 
-### Server log missing
+---
 
-Use absolute paths under `/tmp` when redirecting logs from background processes.
+## Git workflow
 
-Example:
+Recommended milestone commit:
 
 ```bash
-cd /tmp
-nohup ./binder_ping object-server > /tmp/binder_object_server.log 2>&1 &
-echo $! > /tmp/binder_object_server.pid
+git status --short
+git add README.md tools/sidecar_binder.c scripts/build-sidecar.sh scripts/install-sidecar-tv.sh scripts/run-sidecar-smoke-tv.sh
+git commit -m "Add Binder sidecar service manager smoke test"
+git push origin HEAD:main
+```
+
+Avoid committing generated files unless intentionally publishing binaries:
+
+```text
+build/
+*.o
+*.ko
 ```
 
 ---

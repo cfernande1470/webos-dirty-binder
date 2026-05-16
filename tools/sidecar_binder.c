@@ -22,6 +22,7 @@
 #define SC_CODE_ADD_SERVICE 0x53434144U
 #define SC_CODE_GET_SERVICE 0x53434745U
 #define SC_CODE_ECHO        0x4543484fU
+#define SC_CODE_PING        0x50494e47U
 
 #define MAX_SERVICES 16
 #define NAME_LEN 64
@@ -56,6 +57,7 @@ struct service_entry {
     int used;
     char name[NAME_LEN];
     uint32_t handle;
+    binder_uintptr_t death_cookie;
 };
 
 static struct service_entry services[MAX_SERVICES];
@@ -238,6 +240,58 @@ static int binder_send_handle_cmd(int fd, uint32_t cmd, uint32_t handle, const c
                              NULL, 0, tag) < 0 ? -1 : 0;
 }
 
+
+static int binder_send_handle_cookie_cmd(int fd,
+                                         uint32_t cmd,
+                                         uint32_t handle,
+                                         binder_uintptr_t cookie,
+                                         const char *tag)
+{
+    uint8_t writebuf[64];
+    uint8_t *p = writebuf;
+
+    /*
+     * LG/webOS Binder 4.4 consumes this command as:
+     *
+     *   uint32_t cmd;
+     *   uint32_t handle;
+     *   binder_uintptr_t cookie;
+     *
+     * i.e. 4 + 4 + 8 = 16 bytes total on arm64.
+     *
+     * Do not append struct binder_handle_cookie directly here: on arm64 that
+     * struct can include padding after the 32-bit handle, producing a 20-byte
+     * write including the command. The driver then consumes only 16 bytes and
+     * the trailing padding desynchronizes the command stream / fails with
+     * EINVAL on this target.
+     */
+    append_u32(&p, cmd);
+    append_u32(&p, handle);
+    append_bytes(&p, &cookie, sizeof(cookie));
+
+    printf("%s: cmd=0x%08x handle=%u cookie=0x%" PRIx64 "\n",
+           tag, cmd, handle, (uint64_t)cookie);
+
+    return binder_write_read(fd, writebuf, (size_t)(p - writebuf),
+                             NULL, 0, tag) < 0 ? -1 : 0;
+}
+
+static int binder_send_dead_binder_done(int fd, binder_uintptr_t cookie, const char *tag)
+{
+    uint8_t writebuf[64];
+    uint8_t *p = writebuf;
+    uint32_t cmd = BC_DEAD_BINDER_DONE;
+
+    append_u32(&p, cmd);
+    append_bytes(&p, &cookie, sizeof(cookie));
+
+    printf("%s: cmd=0x%08x cookie=0x%" PRIx64 "\n",
+           tag, cmd, (uint64_t)cookie);
+
+    return binder_write_read(fd, writebuf, (size_t)(p - writebuf),
+                             NULL, 0, tag) < 0 ? -1 : 0;
+}
+
 static int handle_ref_cmd(int fd, uint32_t rcmd, uint8_t **ptr, uint8_t *end, const char *who)
 {
     struct binder_ptr_cookie pc;
@@ -379,6 +433,59 @@ static int registry_add(const char *name, uint32_t handle)
     return -1;
 }
 
+
+static struct service_entry *registry_find_by_name(const char *name)
+{
+    int i;
+
+    for (i = 0; i < MAX_SERVICES; i++) {
+        if (services[i].used && strcmp(services[i].name, name) == 0)
+            return &services[i];
+    }
+
+    return NULL;
+}
+
+static int registry_remove_by_death_cookie(binder_uintptr_t cookie)
+{
+    int i;
+
+    for (i = 0; i < MAX_SERVICES; i++) {
+        if (services[i].used && services[i].death_cookie == cookie) {
+            printf("sm-server: service died name=%s handle=%u cookie=0x%" PRIx64 "\n",
+                   services[i].name,
+                   services[i].handle,
+                   (uint64_t)cookie);
+            memset(&services[i], 0, sizeof(services[i]));
+            return 0;
+        }
+    }
+
+    printf("sm-server: death cookie not found cookie=0x%" PRIx64 "\n",
+           (uint64_t)cookie);
+    return -1;
+}
+
+static int handle_dead_binder_cmd(int fd, uint8_t **ptr, uint8_t *end, const char *who)
+{
+    binder_uintptr_t cookie;
+
+    if (*ptr + sizeof(cookie) > end) {
+        fprintf(stderr, "%s: truncated BR_DEAD_BINDER\n", who);
+        return -1;
+    }
+
+    memcpy(&cookie, *ptr, sizeof(cookie));
+    *ptr += sizeof(cookie);
+
+    printf("%s BR_DEAD_BINDER cookie=0x%" PRIx64 "\n",
+           who, (uint64_t)cookie);
+
+    registry_remove_by_death_cookie(cookie);
+
+    return binder_send_dead_binder_done(fd, cookie, "BC_DEAD_BINDER_DONE");
+}
+
 static uint32_t registry_get(const char *name)
 {
     int i;
@@ -433,6 +540,106 @@ static uint32_t first_handle_from_transaction(struct binder_transaction_data *tr
     return obj->handle;
 }
 
+
+static int sm_ping_service_handle(int fd, uint32_t handle, const char *name)
+{
+    const char payload[] = "PING from mini_servicemgr";
+    uint8_t writebuf[1024];
+    uint8_t readbuf[8192];
+    uint8_t *p = writebuf;
+    uint32_t cmd;
+    struct binder_transaction_data tr;
+    int first = 1;
+
+    printf("sm-server: ping service name=%s handle=%u\n", name, handle);
+
+    memset(&tr, 0, sizeof(tr));
+    tr.target.handle = handle;
+    tr.code = SC_CODE_PING;
+    tr.flags = TF_ACCEPT_FDS;
+    tr.data_size = sizeof(payload);
+    tr.offsets_size = 0;
+    tr.data.ptr.buffer = (binder_uintptr_t)payload;
+    tr.data.ptr.offsets = 0;
+
+    cmd = BC_TRANSACTION;
+    append_u32(&p, cmd);
+    append_bytes(&p, &tr, sizeof(tr));
+
+    for (;;) {
+        int n;
+
+        if (first) {
+            n = binder_write_read(fd, writebuf, (size_t)(p - writebuf),
+                                  readbuf, sizeof(readbuf), "sm-server ping service call");
+            first = 0;
+        } else {
+            n = binder_write_read(fd, NULL, 0,
+                                  readbuf, sizeof(readbuf), "sm-server ping service wait");
+        }
+
+        if (n < 0)
+            return -1;
+
+        uint8_t *ptr = readbuf;
+        uint8_t *end = readbuf + n;
+
+        while (ptr + sizeof(uint32_t) <= end) {
+            uint32_t rcmd;
+            memcpy(&rcmd, ptr, sizeof(rcmd));
+            ptr += sizeof(rcmd);
+
+            printf("sm-server ping got %s 0x%08x\n", cmd_name(rcmd), rcmd);
+
+            if (rcmd == BR_REPLY) {
+                struct binder_transaction_data reply;
+
+                if (ptr + sizeof(reply) > end)
+                    return -1;
+
+                memcpy(&reply, ptr, sizeof(reply));
+                ptr += sizeof(reply);
+
+                if (reply.data.ptr.buffer && reply.data_size >= sizeof(struct sc_text_reply)) {
+                    struct sc_text_reply *txt = (struct sc_text_reply *)(uintptr_t)reply.data.ptr.buffer;
+                    printf("sm-server: ping reply status=%u text=%s\n", txt->status, txt->text);
+                    binder_free_buffer(fd, reply.data.ptr.buffer);
+                    return txt->status == 0 ? 0 : 1;
+                }
+
+                if (reply.data.ptr.buffer)
+                    binder_free_buffer(fd, reply.data.ptr.buffer);
+
+                return 0;
+            }
+
+            if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY) {
+                printf("sm-server: ping service dead/failed cmd=0x%08x\n", rcmd);
+                return 1;
+            }
+
+            if (rcmd == BR_NOOP || rcmd == BR_TRANSACTION_COMPLETE)
+                continue;
+
+            if (rcmd == BR_DEAD_BINDER) {
+                if (handle_dead_binder_cmd(fd, &ptr, end, "sm-server") != 0)
+                    return -1;
+                continue;
+            }
+
+            if (rcmd == BR_INCREFS || rcmd == BR_ACQUIRE ||
+                rcmd == BR_RELEASE || rcmd == BR_DECREFS) {
+                if (handle_ref_cmd(fd, rcmd, &ptr, end, "sm-server ping") != 0)
+                    return -1;
+                continue;
+            }
+
+            printf("sm-server ping unhandled cmd=0x%08x\n", rcmd);
+            return -1;
+        }
+    }
+}
+
 static int process_sm_transaction(int fd, struct binder_transaction_data *tr)
 {
     printf("sm-server BR_TRANSACTION code=0x%x sender_pid=%d sender_euid=%u data_size=%" PRIu64 " offsets_size=%" PRIu64 "\n",
@@ -476,6 +683,30 @@ static int process_sm_transaction(int fd, struct binder_transaction_data *tr)
         if (binder_send_handle_cmd(fd, BC_ACQUIRE, handle, "sm-server BC_ACQUIRE service handle") != 0)
             return send_text_reply(fd, tr->data.ptr.buffer, "ACQUIRE FAILED", 1, "sm-server add acquire-failed reply");
 
+        {
+            struct service_entry *entry = registry_find_by_name(msg->name);
+
+            if (!entry)
+                return send_text_reply(fd, tr->data.ptr.buffer, "REGISTRY LOST", 1, "sm-server add registry-lost reply");
+
+            entry->death_cookie = (binder_uintptr_t)entry;
+
+            if (binder_send_handle_cookie_cmd(fd,
+                                              BC_REQUEST_DEATH_NOTIFICATION,
+                                              handle,
+                                              entry->death_cookie,
+                                              "BC_REQUEST_DEATH_NOTIFICATION service handle") != 0) {
+                /*
+                 * Keep addService usable even if this experimental kernel
+                 * rejects death notifications. The death smoke test will make
+                 * this visible in the logs.
+                 */
+                printf("sm-server: death notification request failed; continuing without death cleanup\n");
+                entry->death_cookie = 0;
+            }
+        }
+
+
         printf("sm-server: addService name=%s handle=%u\n", msg->name, handle);
         registry_dump();
 
@@ -502,6 +733,24 @@ static int process_sm_transaction(int fd, struct binder_transaction_data *tr)
 
         if (!handle)
             return send_text_reply(fd, tr->data.ptr.buffer, "NOT FOUND", 1, "sm-server get notfound reply");
+
+        /*
+         * LG/webOS Binder currently rejects BC_REQUEST_DEATH_NOTIFICATION
+         * with EINVAL, so use lazy cleanup: verify the stored handle before
+         * returning it to a client. If the service is already dead, remove it
+         * from the registry and return NOT FOUND instead of a stale handle.
+         */
+        if (sm_ping_service_handle(fd, handle, msg->name) != 0) {
+            struct service_entry *entry = registry_find_by_name(msg->name);
+
+            if (entry) {
+                printf("sm-server: lazy cleanup removing stale service name=%s handle=%u\n",
+                       entry->name, entry->handle);
+                memset(entry, 0, sizeof(*entry));
+            }
+
+            return send_text_reply(fd, tr->data.ptr.buffer, "NOT FOUND", 1, "sm-server get stale-notfound reply");
+        }
 
         return send_get_reply(fd, tr->data.ptr.buffer, 0, handle);
     }
@@ -552,6 +801,9 @@ static int run_sm_server(void)
                 } else if (rcmd == BR_NOOP || rcmd == BR_SPAWN_LOOPER ||
                            rcmd == BR_TRANSACTION_COMPLETE) {
                     continue;
+                } else if (rcmd == BR_DEAD_BINDER) {
+                    if (handle_dead_binder_cmd(fd, &ptr, end, "sm-server") != 0)
+                        return 1;
                 } else if (rcmd == BR_INCREFS || rcmd == BR_ACQUIRE ||
                            rcmd == BR_RELEASE || rcmd == BR_DECREFS) {
                     if (handle_ref_cmd(fd, rcmd, &ptr, end, "sm-server") != 0)
@@ -871,6 +1123,9 @@ static int echo_service_process_transaction(int fd, struct binder_transaction_da
            tr->sender_pid,
            tr->sender_euid,
            (uint64_t)tr->data_size);
+
+    if (tr->code == SC_CODE_PING)
+        return send_text_reply(fd, tr->data.ptr.buffer, "PONG from echo-service", 0, "echo-service ping reply");
 
     if (tr->code != SC_CODE_ECHO)
         return send_text_reply(fd, tr->data.ptr.buffer, "UNKNOWN ECHO CODE", 1, "echo-service unknown reply");
