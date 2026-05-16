@@ -64,6 +64,15 @@ struct service_entry {
 };
 
 static struct service_entry services[MAX_SERVICES];
+static binder_uintptr_t death_cookie_seq = (binder_uintptr_t)0x53444300U;
+
+static binder_uintptr_t next_death_cookie(void)
+{
+    death_cookie_seq++;
+    if (!death_cookie_seq)
+        death_cookie_seq++;
+    return death_cookie_seq;
+}
 
 static void die(const char *msg)
 {
@@ -744,7 +753,7 @@ static int process_sm_transaction(int fd, struct binder_transaction_data *tr)
             if (!entry)
                 return send_text_reply(fd, tr->data.ptr.buffer, "REGISTRY LOST", 1, "sm-server add registry-lost reply");
 
-            entry->death_cookie = (binder_uintptr_t)entry;
+            entry->death_cookie = next_death_cookie();
 
             if (binder_send_handle_cookie_cmd(fd,
                                           SIDE_BC_REQUEST_DEATH_NOTIFICATION_RAW,
