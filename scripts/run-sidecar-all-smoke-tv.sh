@@ -32,4 +32,7 @@ echo "== sidecar context-manager restart smoke =="
 echo "== sidecar duplicate registration smoke =="
 ./scripts/run-sidecar-duplicate-smoke-tv.sh
 
+echo "== AOSP ServiceManager compatibility smoke =="
+./scripts/run-aosp-sm-compat-smoke-tv.sh
+
 echo "ALL_SIDECAR_SMOKE_OK"
