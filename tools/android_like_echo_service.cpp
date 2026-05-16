@@ -540,40 +540,6 @@ static int aidl_like_read_string16_ascii(struct aidl_like_parcel_view *v,
     return 0;
 }
 
-static int aidl_like_parse_echo_request(const void *data,
-                                        size_t size,
-                                        const char **message_out,
-                                        char *descriptor,
-                                        size_t descriptor_len)
-{
-    struct aidl_like_parcel_view v;
-    int32_t strict_policy;
-
-    if (!data || !message_out || !descriptor || descriptor_len == 0)
-        return -1;
-
-    *message_out = "";
-
-    v.data = (const uint8_t *)data;
-    v.size = size;
-    v.pos = 0;
-
-    if (aidl_like_read_i32(&v, &strict_policy) != 0)
-        return -1;
-
-    if (aidl_like_read_string16_ascii(&v, descriptor, descriptor_len) != 0)
-        return -1;
-
-    if (strcmp(descriptor, ANDROID_LIKE_ECHO_DESCRIPTOR) != 0)
-        return -1;
-
-    if (v.pos >= v.size)
-        return -1;
-
-    *message_out = (const char *)(v.data + v.pos);
-    return 0;
-}
-
 static int process_transaction(int fd,
                                AndroidLikeEchoService &service,
                                struct binder_transaction_data *tr)
