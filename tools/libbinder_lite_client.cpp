@@ -997,63 +997,184 @@ static int call_echo_handle(int fd, uint32_t handle)
     }
 }
 
+namespace android_lite {
+
+class BinderDriver {
+public:
+    BinderDriver()
+        : fd_(binder_open_and_init())
+    {
+    }
+
+    int fd() const
+    {
+        return fd_;
+    }
+
+private:
+    int fd_;
+};
+
+class BpBinder {
+public:
+    BpBinder()
+        : fd_(-1), handle_(0)
+    {
+    }
+
+    BpBinder(int fd, uint32_t handle)
+        : fd_(fd), handle_(handle)
+    {
+    }
+
+    bool valid() const
+    {
+        return fd_ >= 0 && handle_ != 0;
+    }
+
+    uint32_t handle() const
+    {
+        return handle_;
+    }
+
+    int transactEcho() const
+    {
+        if (!valid()) {
+            fprintf(stderr, "libbinder-lite BpBinder invalid handle\n");
+            return 1;
+        }
+
+        return call_echo_handle(fd_, handle_);
+    }
+
+private:
+    int fd_;
+    uint32_t handle_;
+};
+
+class ServiceManagerProxy {
+public:
+    explicit ServiceManagerProxy(BinderDriver &driver)
+        : driver_(driver)
+    {
+    }
+
+    bool listServicesContains(const char *name)
+    {
+        return aosp_list_services_contains(driver_.fd(), name) == 0;
+    }
+
+    BpBinder checkService(const char *name)
+    {
+        uint32_t handle = 0;
+
+        printf("libbinder-lite API checkService(%s)\n", name);
+
+        if (aosp_check_service(driver_.fd(), name, &handle) != 0)
+            return BpBinder();
+
+        return BpBinder(driver_.fd(), handle);
+    }
+
+    BpBinder getService(const char *name)
+    {
+        uint32_t handle = 0;
+
+        printf("libbinder-lite API getService(%s)\n", name);
+
+        if (aosp_get_service(driver_.fd(), name, &handle) != 0)
+            return BpBinder();
+
+        return BpBinder(driver_.fd(), handle);
+    }
+
+    int addService(const char *name, const BpBinder &service)
+    {
+        if (!service.valid()) {
+            fprintf(stderr, "libbinder-lite API addService(%s): invalid service\n", name);
+            return 1;
+        }
+
+        printf("libbinder-lite API addService(%s, handle=%u)\n",
+               name,
+               service.handle());
+
+        return aosp_add_service_handle(driver_.fd(), name, service.handle());
+    }
+
+private:
+    BinderDriver &driver_;
+};
+
+static ServiceManagerProxy defaultServiceManager(BinderDriver &driver)
+{
+    return ServiceManagerProxy(driver);
+}
+
+}  // namespace android_lite
+
 int main(int argc, char **argv)
 {
     const char *name = argc >= 2 ? argv[1] : "test.aosp";
-    int fd;
-    uint32_t handle = 0;
+    const char *alias = "test.aosp.alias";
 
-    fd = binder_open_and_init();
+    android_lite::BinderDriver driver;
+    android_lite::ServiceManagerProxy sm =
+        android_lite::defaultServiceManager(driver);
 
-    if (aosp_list_services_contains(fd, name) != 0)
+    printf("libbinder-lite API defaultServiceManager OK\n");
+
+    if (!sm.listServicesContains(name))
         return 1;
 
-    printf("libbinder-lite checkService name=%s\n", name);
+    android_lite::BpBinder checked = sm.checkService(name);
+    if (!checked.valid()) {
+        fprintf(stderr, "libbinder-lite API checkService returned invalid binder\n");
+        return 1;
+    }
 
-    if (aosp_check_service(fd, name, &handle) != 0)
+    printf("libbinder-lite API checkService got handle=%u\n", checked.handle());
+
+    if (checked.transactEcho() != 0)
         return 1;
 
-    printf("libbinder-lite checkService got handle=%u\n", handle);
+    printf("LIBBINDER_LITE_CHECK_SERVICE_OK\n");
 
-    if (call_echo_handle(fd, handle) != 0)
+    android_lite::BpBinder got = sm.getService(name);
+    if (!got.valid()) {
+        fprintf(stderr, "libbinder-lite API getService returned invalid binder\n");
+        return 1;
+    }
+
+    printf("libbinder-lite API getService got handle=%u\n", got.handle());
+
+    if (got.transactEcho() != 0)
         return 1;
 
-    printf("AOSP_CHECK_SERVICE_OK\n");
+    printf("LIBBINDER_LITE_GET_SERVICE_OK\n");
 
-    handle = 0;
-
-    printf("libbinder-lite getService name=%s\n", name);
-
-    if (aosp_get_service(fd, name, &handle) != 0)
+    if (sm.addService(alias, got) != 0)
         return 1;
 
-    printf("libbinder-lite getService got handle=%u\n", handle);
+    printf("LIBBINDER_LITE_ADD_SERVICE_OK\n");
 
-    if (call_echo_handle(fd, handle) != 0)
+    if (!sm.listServicesContains(alias))
         return 1;
 
-    printf("AOSP_GET_SERVICE_OK\n");
+    android_lite::BpBinder aliasBinder = sm.checkService(alias);
+    if (!aliasBinder.valid()) {
+        fprintf(stderr, "libbinder-lite API alias checkService returned invalid binder\n");
+        return 1;
+    }
 
-    if (aosp_add_service_handle(fd, "test.aosp.alias", handle) != 0)
+    printf("libbinder-lite API alias checkService got handle=%u\n",
+           aliasBinder.handle());
+
+    if (aliasBinder.transactEcho() != 0)
         return 1;
 
-    if (aosp_list_services_contains(fd, "test.aosp.alias") != 0)
-        return 1;
-
-    handle = 0;
-
-    printf("libbinder-lite checkService alias name=test.aosp.alias\n");
-
-    if (aosp_check_service(fd, "test.aosp.alias", &handle) != 0)
-        return 1;
-
-    printf("libbinder-lite checkService alias got handle=%u\n", handle);
-
-    if (call_echo_handle(fd, handle) != 0)
-        return 1;
-
-    printf("AOSP_ALIAS_SERVICE_OK\n");
-
+    printf("LIBBINDER_LITE_ALIAS_SERVICE_OK\n");
+    printf("LIBBINDER_LITE_API_CLIENT_OK\n");
     printf("LIBBINDER_LITE_CLIENT_OK\n");
     return 0;
 }
