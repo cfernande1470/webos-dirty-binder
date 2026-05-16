@@ -11,9 +11,9 @@ This repository explores whether Android Binder IPC can be built, loaded, and us
 
 ## Current status
 
-The project now demonstrates a working Binder IPC stack on LG webOS.
+The project now demonstrates a working Binder IPC stack on the tested LG webOS TV target.
 
-Confirmed on the tested LG webOS TV target:
+Confirmed:
 
 - Binder kernel module loads successfully.
 - `/dev/binder` is created.
@@ -27,34 +27,43 @@ Confirmed on the tested LG webOS TV target:
 - A service can register itself by name.
 - A client can resolve that service by name.
 - A client can call the service through the returned Binder handle.
-- Dead/stale services are detected through lazy cleanup.
+- Service handles are acquired by the service manager before being stored.
+- Returned service handles are acquired by the client before freeing the reply buffer.
+- Binder death notifications now work on the tested LG/webOS Binder 4.4 target by using the raw death-notification request encoding.
+- Dead services are removed eagerly from the sidecar registry when Binder reports service death.
+- Lazy cleanup remains available as a defensive fallback.
 
 Latest important milestones:
 
 ```text
-plain Binder transaction       OK
-Binder object passing          OK
-Binder callback                OK
-mini service manager           OK
-addService/getService/call     OK
-lazy stale-handle cleanup      OK
+plain Binder transaction OK
+Binder object passing OK
+Binder callback OK
+mini service manager OK
+addService/getService/call OK
+raw Binder death notification request OK
+BR_DEAD_BINDER_RAW delivery OK
+BC_DEAD_BINDER_DONE acknowledgement OK
+eager service registry cleanup on death OK
+lazy stale-handle cleanup fallback OK
 ```
 
-The latest sidecar smoke test returned:
+Latest successful death-notification smoke test:
 
 ```text
-CLIENT_EXIT=0
-echo-client reply status=0 text=echo-service reply from webOS sidecar
-```
-
-The latest lazy cleanup test returned:
-
-```text
-BEFORE_EXIT=0
-AFTER_EXIT=1
-sm-server: lazy cleanup removing stale service name=test.echo handle=1
+BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: cmd=0x400c630e handle=1 cookie=0x4a1988
+BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: write_consumed=16 read_consumed=0
+sm-server got BR_DEAD_BINDER_RAW 0x8008720f
+sm-server death/clear cmd=0x8008720f cookie=0x4a1988
+sm-server: service died name=test.echo handle=1 cookie=0x4a1988
+BC_DEAD_BINDER_DONE: cmd=0x40086310 cookie=0x4a1988
+BC_DEAD_BINDER_DONE: write_consumed=12 read_consumed=0
+sm-server: getService name=test.echo handle=0
 getService text reply status=1 text=NOT FOUND
+echo-client: getService failed for test.echo
 ```
+
+`echo-client: getService failed for test.echo` is expected after the service is killed. It means the service manager no longer returns a stale handle.
 
 ---
 
@@ -64,20 +73,23 @@ Known working target:
 
 ```text
 Device family: LG webOS TV
-Kernel:        4.4.84-229.1.kavir.2
-Architecture:  arm64 / aarch64
-Binder proto:  8
+Kernel: 4.4.84-229.1.kavir.2
+Architecture: arm64 / aarch64
+Binder protocol: 8
+Binder devices observed: /dev/binder
+hwbinder: not present on tested target
+vndbinder: not present on tested target
 ```
 
 Original development target:
 
 ```text
-LG OLED C1
+LG OLED C1 webOS TV
 webOS TV 6.2.0
 O20 platform
 ```
 
-Other LG webOS versions may require different kernel symbols, configs, offsets, or patches.
+Other LG webOS versions may require different kernel symbols, configs, offsets, command packing, or patches.
 
 ---
 
@@ -95,7 +107,10 @@ It currently provides:
 - Binder callback tests.
 - A small Binder sidecar service manager.
 - An echo service and echo client using Binder handles.
-- Lazy cleanup of stale service handles.
+- Service registration through `addService`.
+- Service lookup through `getService`.
+- Binder death notification cleanup.
+- Lazy stale-handle cleanup as fallback.
 
 It is useful for:
 
@@ -142,13 +157,11 @@ The project does **not** currently provide:
 
 ## Safety warning
 
-This project loads an out-of-tree kernel module on a TV.
-
-A bad Binder transaction can crash the kernel.
+This project loads an out-of-tree kernel module on a TV. A bad Binder transaction can crash the kernel.
 
 Recommended safety rules:
 
-- Load only manually while testing.
+- Load the module only manually while testing.
 - Keep the sidecar under internal user storage, not system partitions.
 - Do not install into boot scripts yet.
 - Do not modify `kernel`, `rootfs`, `tvservice`, recovery, boot, or other system partitions.
@@ -156,6 +169,7 @@ Recommended safety rules:
 - Keep SSH access working.
 - Keep the TV on a trusted LAN.
 - Do not expose SSH or Binder experiments to the internet.
+- Treat every Binder parser change as potentially kernel-crashing until tested.
 
 ---
 
@@ -164,26 +178,55 @@ Recommended safety rules:
 Common files:
 
 ```text
-scripts/build-module.sh                Build the dirty Binder kernel module
-scripts/load-binder-tv.sh              Load Binder on the TV
-scripts/build-probe.sh                 Build the basic Binder probe
-scripts/build-ping.sh                  Build Binder transaction/object tests
-scripts/build-sidecar.sh               Build sidecar service manager tools
-scripts/install-sidecar-tv.sh          Install sidecar files to the TV
-scripts/run-sidecar-smoke-tv.sh        Run the sidecar smoke test on the TV
-scripts/run-sidecar-death-smoke-tv.sh  Test Binder death notification behavior
-scripts/run-sidecar-lazy-cleanup-tv.sh Test lazy cleanup of stale handles
+scripts/build-module.sh
+    Build the dirty Binder kernel module.
 
-tools/binder_probe.c                   Basic Binder ioctl probe
-tools/binder_ping.c                    Low-level Binder transaction/object/callback tests
-tools/sidecar_binder.c                 Mini service manager, echo service, echo client
+scripts/load-binder-tv.sh
+    Load Binder on the TV.
 
-patches/                               Kernel/module patches
-artifacts/                             Built module artifacts
-docs/                                  Notes and milestone documentation
+scripts/build-probe.sh
+    Build the basic Binder probe.
+
+scripts/build-ping.sh
+    Build Binder transaction/object/callback tests.
+
+scripts/build-sidecar.sh
+    Build sidecar service manager tools.
+
+scripts/install-sidecar-tv.sh
+    Install sidecar files to the TV.
+
+scripts/run-sidecar-smoke-tv.sh
+    Run the sidecar smoke test on the TV.
+
+scripts/run-sidecar-death-smoke-tv.sh
+    Test Binder death notification behavior.
+
+scripts/run-sidecar-lazy-cleanup-tv.sh
+    Test lazy cleanup of stale handles.
+
+tools/binder_probe.c
+    Basic Binder ioctl probe.
+
+tools/binder_ping.c
+    Low-level Binder transaction/object/callback tests.
+
+tools/sidecar_binder.c
+    Mini service manager, echo service, and echo client.
+
+patches/
+    Kernel/module patches.
+
+artifacts/
+    Built module artifacts.
+
+docs/
+    Notes and milestone documentation.
 ```
 
 Generated files under `build/` should normally not be committed.
+
+Backup files such as `*.bak`, temporary patch scripts, and local test artifacts should normally not be committed unless intentionally preserved.
 
 ---
 
@@ -295,17 +338,11 @@ Installed layout:
   load-binder-tv.sh
 ```
 
-The current sidecar is small:
-
-```text
-2.9M /media/internal/android-sidecar
-```
+The current sidecar is small, around a few megabytes on the tested target.
 
 ---
 
 ## Install sidecar to internal storage
-
-Install:
 
 ```bash
 cd ~/disk/webos-dirty-binder
@@ -344,13 +381,14 @@ The smoke test performs:
 3. Start echo_service.
 4. echo_service calls addService("test.echo").
 5. mini_servicemgr stores test.echo -> handle=1.
-6. echo_client calls getService("test.echo").
-7. mini_servicemgr returns a Binder handle.
-8. echo_client acquires the returned handle.
-9. echo_client calls the service handle.
-10. echo_service receives the transaction.
-11. echo_service replies.
-12. echo_client receives the reply and exits with 0.
+6. mini_servicemgr requests a death notification for the stored handle.
+7. echo_client calls getService("test.echo").
+8. mini_servicemgr returns a Binder handle.
+9. echo_client acquires the returned handle.
+10. echo_client calls the service handle.
+11. echo_service receives the transaction.
+12. echo_service replies.
+13. echo_client receives the reply and exits with 0.
 ```
 
 ---
@@ -363,17 +401,18 @@ Successful module load:
 Loading /media/internal/android-sidecar/modules/binder.ko
 Loaded:
 binder 118784 0 [permanent], Live 0xffffffbffc35f000 (O)
-crw-------    1 root     root       10,  53 May 16 04:20 /dev/binder
-CLIENT_EXIT=0
+crw------- 1 root root 10, 53 /dev/binder
 ```
 
 Successful service registration:
 
 ```text
-sm-server BR_TRANSACTION code=0x53434144 sender_pid=3531 sender_euid=0 data_size=96 offsets_size=8
+sm-server BR_TRANSACTION code=0x53434144 sender_pid=3500 sender_euid=0 data_size=96 offsets_size=8
 object from txn: offset=72 type=0x73682a85 BINDER_TYPE_HANDLE handle=1 binder=0x1 cookie=0x0
 sm-server BC_ACQUIRE service handle: cmd=0x40046305 handle=1
 sm-server BC_ACQUIRE service handle: write_consumed=8 read_consumed=0
+BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: cmd=0x400c630e handle=1 cookie=0x4a1988
+BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: write_consumed=16 read_consumed=0
 sm-server: addService name=test.echo handle=1
 sm-server registry:
   test.echo -> handle=1
@@ -382,7 +421,7 @@ sm-server registry:
 Successful service lookup:
 
 ```text
-sm-server BR_TRANSACTION code=0x53434745 sender_pid=3587 sender_euid=0 data_size=72 offsets_size=0
+sm-server BR_TRANSACTION code=0x53434745 sender_pid=3545 sender_euid=0 data_size=72 offsets_size=0
 sm-server: getService name=test.echo handle=1
 sm-server: replying with handle=1 status=0
 sm-server getService reply: write_consumed=80 read_consumed=0
@@ -401,7 +440,7 @@ getService BC_ACQUIRE returned handle: write_consumed=8 read_consumed=0
 Successful service call:
 
 ```text
-echo-client: calling handle=1 message=hello from sidecar smoke
+echo-client: calling handle=1 message=before service death
 echo-client got BR_REPLY 0x80407203
 echo-client reply status=0 text=echo-service reply from webOS sidecar
 ```
@@ -409,16 +448,140 @@ echo-client reply status=0 text=echo-service reply from webOS sidecar
 Successful service-side receive:
 
 ```text
-echo-service BR_TRANSACTION code=0x4543484f sender_pid=3587 sender_euid=0 data_size=25
-echo-service request payload: hello from sidecar smoke
+echo-service BR_TRANSACTION code=0x4543484f sender_pid=3545 sender_euid=0 data_size=21
+echo-service request payload: before service death
 echo-service reply: write_consumed=80 read_consumed=0
 ```
 
 ---
 
-## Lazy cleanup smoke test
+## Binder death notifications
 
-Because `BC_REQUEST_DEATH_NOTIFICATION` currently returns `EINVAL` on the tested LG webOS Binder target, the sidecar service manager uses lazy cleanup.
+Death notifications now work on the tested LG/webOS Binder 4.4 target.
+
+The normal `BC_REQUEST_DEATH_NOTIFICATION` encoding produced:
+
+```text
+cmd=0x4010630e
+ioctl failed errno=22 (Invalid argument)
+```
+
+The working request uses the raw 12-byte command encoding:
+
+```text
+BC_REQUEST_DEATH_NOTIFICATION_RAW = 0x400c630e
+```
+
+The sidecar writes:
+
+```text
+uint32_t cmd
+uint32_t handle
+binder_uintptr_t cookie
+```
+
+On the tested arm64 target this gives:
+
+```text
+write_size=16
+```
+
+The successful request log is:
+
+```text
+BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: cmd=0x400c630e handle=1 cookie=0x4a1988
+BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: BINDER_WRITE_READ write_size=16 read_size=0
+BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: write_consumed=16 read_consumed=0
+```
+
+When the service dies, the tested Binder driver returns:
+
+```text
+BR_DEAD_BINDER_RAW = 0x8008720f
+```
+
+The sidecar handles it as a Binder death notification:
+
+```text
+sm-server got BR_DEAD_BINDER_RAW 0x8008720f
+sm-server death/clear cmd=0x8008720f cookie=0x4a1988
+sm-server: service died name=test.echo handle=1 cookie=0x4a1988
+```
+
+Then the sidecar acknowledges the death notification with:
+
+```text
+BC_DEAD_BINDER_DONE
+```
+
+Confirmed ACK log:
+
+```text
+BC_DEAD_BINDER_DONE: cmd=0x40086310 cookie=0x4a1988
+BC_DEAD_BINDER_DONE: BINDER_WRITE_READ write_size=12 read_size=0
+BC_DEAD_BINDER_DONE: write_consumed=12 read_consumed=0
+```
+
+After cleanup, `getService("test.echo")` returns `NOT FOUND` immediately:
+
+```text
+sm-server: getService name=test.echo handle=0
+sm-server get notfound reply: BINDER_WRITE_READ write_size=80 read_size=0
+getService text reply status=1 text=NOT FOUND
+echo-client: getService failed for test.echo
+```
+
+This is the expected successful behavior after service death.
+
+---
+
+## Why `0x8008720f` matters
+
+The observed death return on the tested target is:
+
+```text
+0x8008720f
+```
+
+This must be treated as raw `BR_DEAD_BINDER`, not as clear-death-notification-done.
+
+Correct behavior:
+
+```text
+receive 0x8008720f
+read binder_uintptr_t cookie
+remove matching service registry entry
+send BC_DEAD_BINDER_DONE(cookie)
+```
+
+Incorrect behavior:
+
+```text
+receive 0x8008720f
+log it as unhandled
+do not remove service
+do not send BC_DEAD_BINDER_DONE
+```
+
+The old bad log was:
+
+```text
+sm-server got BR_DEAD_BINDER_RAW 0x8008720f
+sm-server unhandled cmd=0x8008720f
+```
+
+The new good log is:
+
+```text
+sm-server got BR_DEAD_BINDER_RAW 0x8008720f
+sm-server death/clear cmd=0x8008720f cookie=0x4a1988
+sm-server: service died name=test.echo handle=1 cookie=0x4a1988
+BC_DEAD_BINDER_DONE: cmd=0x40086310 cookie=0x4a1988
+```
+
+---
+
+## Death notification smoke test
 
 Run:
 
@@ -427,33 +590,112 @@ cd ~/disk/webos-dirty-binder
 
 TV_IP=192.168.2.121 \
 SIDE_DIR=/media/internal/android-sidecar \
-./scripts/run-sidecar-lazy-cleanup-tv.sh
+./scripts/run-sidecar-death-smoke-tv.sh
 ```
 
-Expected result:
+Expected high-level result:
 
 ```text
 BEFORE_EXIT=0
 AFTER_EXIT=1
 ```
 
-Flow:
+`AFTER_EXIT=1` is expected because the second client runs after the service has been killed. The important part is that the failure is clean and returns `NOT FOUND`, not a stale handle.
+
+Expected flow:
 
 ```text
-1. Start mini_servicemgr.
-2. Start echo_service.
-3. Register test.echo.
-4. Run echo_client before killing the service.
-5. Confirm the call succeeds.
-6. Kill echo_service.
-7. Run echo_client again.
-8. mini_servicemgr pings the stored handle.
-9. Binder returns BR_DEAD_REPLY.
-10. mini_servicemgr removes test.echo from the registry.
-11. getService returns NOT FOUND.
+1. Load binder.ko if needed.
+2. Start mini_servicemgr.
+3. Start echo_service.
+4. echo_service registers test.echo.
+5. mini_servicemgr acquires the service handle.
+6. mini_servicemgr requests raw Binder death notification.
+7. Run echo_client before killing the service.
+8. Confirm service call succeeds.
+9. Kill echo_service.
+10. Binder reports BR_DEAD_BINDER_RAW to mini_servicemgr.
+11. mini_servicemgr removes test.echo from the registry by death cookie.
+12. mini_servicemgr sends BC_DEAD_BINDER_DONE.
+13. Run echo_client again.
+14. getService returns NOT FOUND.
 ```
 
-Confirmed lazy cleanup log:
+Good death-cleanup log:
+
+```text
+sm-server got BR_DEAD_BINDER_RAW 0x8008720f
+sm-server death/clear cmd=0x8008720f cookie=0x4a1988
+sm-server: service died name=test.echo handle=1 cookie=0x4a1988
+BC_DEAD_BINDER_DONE: cmd=0x40086310 cookie=0x4a1988
+BC_DEAD_BINDER_DONE: write_consumed=12 read_consumed=0
+```
+
+Good after-death client result:
+
+```text
+getService text reply status=1 text=NOT FOUND
+echo-client: getService failed for test.echo
+```
+
+Bad signs:
+
+```text
+BC_REQUEST_DEATH_NOTIFICATION service handle: cmd=0x4010630e
+ioctl failed errno=22 (Invalid argument)
+```
+
+```text
+sm-server unhandled cmd=0x8008720f
+```
+
+```text
+sm-server: getService name=test.echo handle=1
+```
+
+after the service has already died.
+
+---
+
+## Lazy cleanup
+
+Lazy cleanup is no longer the primary service-death mechanism.
+
+The primary path is now:
+
+```text
+addService(name, binder)
+-> acquire service handle
+-> request raw Binder death notification
+-> receive BR_DEAD_BINDER_RAW when service dies
+-> remove registry entry by death cookie
+-> send BC_DEAD_BINDER_DONE
+-> future getService(name) returns NOT FOUND
+```
+
+Lazy cleanup should still remain in the project as a defensive fallback.
+
+It protects against cases such as:
+
+- Running on a different LG/webOS kernel where the raw death request is rejected.
+- A missed or delayed death notification.
+- A parser bug in future Binder command handling.
+- A service registered before death notifications were enabled.
+- A stale entry left by an older build.
+- A race where a client asks for the service while death cleanup is still pending.
+- Manual experiments that bypass the normal addService path.
+
+Fallback behavior:
+
+```text
+getService(name)
+-> lookup stored handle
+-> ping stored handle
+-> if alive: return handle
+-> if BR_DEAD_REPLY or BR_FAILED_REPLY: remove service and return NOT FOUND
+```
+
+Confirmed fallback log from earlier testing:
 
 ```text
 sm-server: ping service name=test.echo handle=1
@@ -463,55 +705,14 @@ sm-server: lazy cleanup removing stale service name=test.echo handle=1
 sm-server get stale-notfound reply: write_consumed=80 read_consumed=0
 ```
 
-Confirmed client-side result after cleanup:
-
-```text
-getService text reply status=1 text=NOT FOUND
-echo-client: getService failed for test.echo
-```
-
----
-
-## Binder death notification behavior
-
-Death notifications were tested with:
-
-```text
-BC_REQUEST_DEATH_NOTIFICATION
-```
-
-The command is now packed as:
-
-```text
-uint32_t cmd
-uint32_t handle
-binder_uintptr_t cookie
-```
-
-On arm64 this produces:
-
-```text
-write_size=16
-```
-
-Confirmed log:
-
-```text
-BC_REQUEST_DEATH_NOTIFICATION service handle: BINDER_WRITE_READ write_size=16 read_size=0
-BC_REQUEST_DEATH_NOTIFICATION service handle: ioctl failed errno=22 (Invalid argument)
-```
-
-This means the original struct-padding issue was eliminated, but this LG/webOS Binder 4.4 target still rejects the command with `EINVAL`.
-
 Current policy:
 
 ```text
-Death notification request fails -> continue running
-getService() validates the stored handle through a Binder ping
-dead handle -> lazy cleanup -> NOT FOUND
+death notification available -> eager cleanup
+death notification missing/failing/racy -> lazy cleanup fallback
 ```
 
-This keeps the sidecar functional even without automatic death notifications.
+So lazy cleanup is not strictly necessary for the happy path anymore, but it is still worth keeping.
 
 ---
 
@@ -696,22 +897,61 @@ Without these acquisitions, later calls can fail with:
 BR_FAILED_REPLY
 ```
 
-### Death notifications and lazy cleanup
+### Death notification request packing
 
-`BC_REQUEST_DEATH_NOTIFICATION` currently fails on the tested LG/webOS kernel:
-
-```text
-errno=22 (Invalid argument)
-```
-
-The sidecar therefore uses lazy cleanup:
+The standard command constant produced the wrong request for this target:
 
 ```text
-getService(name)
-  -> ping stored handle
-  -> if alive, return handle
-  -> if BR_DEAD_REPLY, remove service and return NOT FOUND
+BC_REQUEST_DEATH_NOTIFICATION service handle: cmd=0x4010630e
+ioctl failed errno=22 (Invalid argument)
 ```
+
+The accepted request is the raw 12-byte encoded command:
+
+```text
+0x400c630e
+```
+
+The sidecar still writes 16 bytes total on arm64 because the payload is:
+
+```text
+uint32_t cmd
+uint32_t handle
+binder_uintptr_t cookie
+```
+
+### Death notification response handling
+
+The observed response after service death is:
+
+```text
+0x8008720f
+```
+
+The sidecar treats this as raw `BR_DEAD_BINDER`.
+
+This response carries:
+
+```text
+binder_uintptr_t cookie
+```
+
+The service manager removes the registry entry whose `death_cookie` matches the received cookie and then sends:
+
+```text
+BC_DEAD_BINDER_DONE(cookie)
+```
+
+### Failure replies during getService
+
+`getService` should fail fast on:
+
+```text
+BR_DEAD_REPLY
+BR_FAILED_REPLY
+```
+
+This prevents hangs if the service manager receives a failure reply while trying to validate or return a handle.
 
 ---
 
@@ -736,12 +976,12 @@ Confirmed:
 - `getService(name) -> handle`
 - Client call through returned handle
 - Service response through Binder
-- Stale service detection through Binder ping
-- Lazy cleanup after `BR_DEAD_REPLY`
-
-Known limitation:
-
-- `BC_REQUEST_DEATH_NOTIFICATION` returns `EINVAL` on the tested target.
+- Raw Binder death notification request
+- Raw dead-binder command handling
+- Registry removal by death cookie
+- `BC_DEAD_BINDER_DONE` acknowledgement
+- `NOT FOUND` after service death
+- Lazy cleanup fallback after `BR_DEAD_REPLY`
 
 Not yet confirmed:
 
@@ -763,37 +1003,59 @@ Not yet confirmed:
 ## Suggested next milestones
 
 1. Add sidecar lifecycle scripts:
-   - `start.sh`
-   - `stop.sh`
-   - `status.sh`
+
+   ```text
+   start.sh
+   stop.sh
+   status.sh
+   restart.sh
+   ```
 
 2. Add multi-service support:
-   - register more than one service
-   - list registered services
-   - replace service by name
-   - handle stale services through lazy cleanup
+
+   ```text
+   register more than one service
+   list registered services
+   replace service by name
+   clean dead services by death cookie
+   keep lazy cleanup fallback
+   ```
 
 3. Add a cleaner service manager protocol:
-   - `ADD_SERVICE`
-   - `GET_SERVICE`
-   - `LIST_SERVICES`
-   - `PING_SERVICE`
-   - structured status codes
+
+   ```text
+   ADD_SERVICE
+   GET_SERVICE
+   LIST_SERVICES
+   PING_SERVICE
+   REMOVE_SERVICE
+   structured status codes
+   ```
 
 4. Add file descriptor passing:
-   - `BINDER_TYPE_FD`
+
+   ```text
+   BINDER_TYPE_FD
+   ```
 
 5. Add stress testing:
-   - repeated service registration
-   - repeated lookup
-   - repeated stale cleanup
-   - forked clients
-   - service restart loops
+
+   ```text
+   repeated service registration
+   repeated lookup
+   repeated service death
+   repeated death notification ACK
+   forked clients
+   service restart loops
+   ```
 
 6. Try Android-native userspace components:
-   - Android `libbinder`
-   - Android `service` command
-   - AOSP `servicemanager`
+
+   ```text
+   Android libbinder
+   Android service command
+   AOSP servicemanager
+   ```
 
 7. Prototype a Binder-to-webOS Luna Bus bridge.
 
@@ -841,13 +1103,55 @@ The service manager must acquire the stored service handle, and the client must 
 
 This is expected if a client tries to call a dead handle directly.
 
-The sidecar avoids returning stale handles by pinging services during `getService()` and removing dead entries through lazy cleanup.
+The sidecar avoids returning stale handles by:
 
-### `BC_REQUEST_DEATH_NOTIFICATION` returns EINVAL
+```text
+primary path: death notification removes the service eagerly
+fallback path: getService pings the stored handle and lazy-cleans if dead
+```
 
-This is currently observed on the tested LG/webOS Binder 4.4 target.
+### `BC_REQUEST_DEATH_NOTIFICATION` returns `EINVAL`
 
-Lazy cleanup is used as a working fallback.
+This means the normal encoded command is being used:
+
+```text
+cmd=0x4010630e
+```
+
+The sidecar should use:
+
+```text
+BC_REQUEST_DEATH_NOTIFICATION_RAW service handle: cmd=0x400c630e
+```
+
+Rebuild and reinstall the sidecar tools.
+
+### `sm-server unhandled cmd=0x8008720f`
+
+The service manager received the raw dead-binder notification but did not dispatch it.
+
+Expected fixed behavior:
+
+```text
+sm-server got BR_DEAD_BINDER_RAW 0x8008720f
+sm-server death/clear cmd=0x8008720f cookie=...
+BC_DEAD_BINDER_DONE: cmd=0x40086310 cookie=...
+```
+
+If `unhandled` still appears, rebuild, reinstall, and confirm the installed `mini_servicemgr` is the newly built binary.
+
+### `echo-client: getService failed for test.echo`
+
+This is expected in the death smoke test after `echo_service` has been killed.
+
+Good after-death behavior:
+
+```text
+getService text reply status=1 text=NOT FOUND
+echo-client: getService failed for test.echo
+```
+
+Bad behavior would be returning a stale handle after the service died.
 
 ### `scp: dest open "/tmp/binder_ping": Failure`
 
@@ -873,19 +1177,19 @@ Then verify that the loaded module includes the `current_euid()` transaction fix
 
 ## Git workflow
 
-Recommended milestone commit:
+Recommended README update commit:
 
 ```bash
+cd ~/disk/webos-dirty-binder
+
+cp /path/to/README.md README.md
+
 git status --short
-git add README.md \
-        tools/sidecar_binder.c \
-        scripts/build-sidecar.sh \
-        scripts/install-sidecar-tv.sh \
-        scripts/run-sidecar-smoke-tv.sh \
-        scripts/run-sidecar-death-smoke-tv.sh \
-        scripts/run-sidecar-lazy-cleanup-tv.sh
-git commit -m "Add Binder sidecar service manager lazy cleanup"
-git push origin HEAD:main
+git diff -- README.md
+
+git add README.md
+git commit -m "docs: update sidecar death notification status"
+git push origin main
 ```
 
 Avoid committing generated files unless intentionally publishing binaries:
@@ -894,7 +1198,11 @@ Avoid committing generated files unless intentionally publishing binaries:
 build/
 *.o
 *.ko
+*.bak
+*.bak.*
 ```
+
+If local scratch scripts are useful, keep them untracked or move them into a deliberate `tools/` or `scripts/` commit.
 
 ---
 
