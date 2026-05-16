@@ -856,10 +856,182 @@ static int send_aosp_handle_reply(int fd,
     return binder_write_read(fd, writebuf, (size_t)(p - writebuf), NULL, 0, tag) < 0 ? -1 : 0;
 }
 
+static int registry_get_name_at(int wanted_index, char *out, size_t out_len)
+{
+    int i;
+    int seen = 0;
+
+    if (!out || out_len == 0)
+        return -1;
+
+    out[0] = '\0';
+
+    for (i = 0; i < MAX_SERVICES; i++) {
+        if (!services[i].used)
+            continue;
+
+        if (seen == wanted_index) {
+            snprintf(out, out_len, "%s", services[i].name);
+            return 0;
+        }
+
+        seen++;
+    }
+
+    return -1;
+}
+
+static int aosp_read_sm_header(struct aosp_parcel_view *v)
+{
+    int32_t strict_policy;
+    char descriptor[128];
+
+    if (aosp_read_i32(v, &strict_policy) != 0)
+        return -1;
+
+    if (aosp_read_string16_ascii(v, descriptor, sizeof(descriptor)) != 0)
+        return -1;
+
+    if (strcmp(descriptor, AOSP_SM_DESCRIPTOR) != 0)
+        return -1;
+
+    return 0;
+}
+
+static int aosp_parse_sm_list_index(struct binder_transaction_data *tr, int32_t *out_index)
+{
+    struct aosp_parcel_view v;
+    int32_t index = 0;
+
+    if (!tr->data.ptr.buffer || tr->data_size == 0)
+        return -1;
+
+    v.data = (uint8_t *)(uintptr_t)tr->data.ptr.buffer;
+    v.size = (size_t)tr->data_size;
+    v.pos = 0;
+
+    if (aosp_read_sm_header(&v) != 0)
+        return -1;
+
+    if (aosp_read_i32(&v, &index) != 0)
+        index = 0;
+
+    if (index < 0)
+        index = 0;
+
+    *out_index = index;
+    return 0;
+}
+
+static int aosp_write_i32(uint8_t *buf, size_t cap, size_t *pos, int32_t v)
+{
+    if (*pos + sizeof(v) > cap)
+        return -1;
+
+    memcpy(buf + *pos, &v, sizeof(v));
+    *pos += sizeof(v);
+    return 0;
+}
+
+static int aosp_write_string16_ascii(uint8_t *buf, size_t cap, size_t *pos, const char *str)
+{
+    int32_t len;
+    size_t bytes;
+    size_t padded;
+    size_t i;
+
+    if (!str)
+        str = "";
+
+    len = (int32_t)strlen(str);
+    bytes = ((size_t)len + 1U) * 2U;
+    padded = aosp_align4(bytes);
+
+    if (aosp_write_i32(buf, cap, pos, len) != 0)
+        return -1;
+
+    if (*pos + padded > cap)
+        return -1;
+
+    memset(buf + *pos, 0, padded);
+
+    for (i = 0; i < (size_t)len; i++) {
+        buf[*pos + i * 2U] = (uint8_t)str[i];
+        buf[*pos + i * 2U + 1U] = 0;
+    }
+
+    *pos += padded;
+    return 0;
+}
+
+static int send_aosp_string16_reply(int fd,
+                                    binder_uintptr_t incoming_buffer,
+                                    const char *str,
+                                    const char *tag)
+{
+    uint8_t parcel[512];
+    size_t parcel_size = 0;
+    uint8_t writebuf[1024];
+    uint8_t *p = writebuf;
+    uint32_t cmd;
+    struct binder_transaction_data reply_tr;
+
+    if (aosp_write_string16_ascii(parcel, sizeof(parcel), &parcel_size, str) != 0) {
+        return send_text_reply(fd,
+                               incoming_buffer,
+                               "AOSP STRING REPLY TOO LARGE",
+                               1,
+                               "sm-server AOSP string reply error");
+    }
+
+    cmd = BC_FREE_BUFFER;
+    append_u32(&p, cmd);
+    append_bytes(&p, &incoming_buffer, sizeof(incoming_buffer));
+
+    cmd = BC_REPLY;
+    append_u32(&p, cmd);
+
+    memset(&reply_tr, 0, sizeof(reply_tr));
+    reply_tr.data_size = parcel_size;
+    reply_tr.offsets_size = 0;
+    reply_tr.data.ptr.buffer = (binder_uintptr_t)parcel;
+    reply_tr.data.ptr.offsets = 0;
+
+    append_bytes(&p, &reply_tr, sizeof(reply_tr));
+
+    printf("sm-server: AOSP String16 reply text=%s\n", str && str[0] ? str : "(empty)");
+    return binder_write_read(fd, writebuf, (size_t)(p - writebuf), NULL, 0, tag) < 0 ? -1 : 0;
+}
+
 static int process_aosp_sm_transaction(int fd, struct binder_transaction_data *tr)
 {
     char name[NAME_LEN];
     uint32_t handle;
+
+    if (tr->code == AOSP_SM_LIST_SERVICES_TRANSACTION) {
+        int32_t index = 0;
+        char service_name[NAME_LEN];
+
+        if (aosp_parse_sm_list_index(tr, &index) != 0) {
+            printf("sm-server: AOSP listServices bad parcel\n");
+            return send_aosp_string16_reply(fd,
+                                            tr->data.ptr.buffer,
+                                            "",
+                                            "sm-server AOSP listServices bad parcel reply");
+        }
+
+        if (registry_get_name_at(index, service_name, sizeof(service_name)) != 0)
+            service_name[0] = '\0';
+
+        printf("sm-server: AOSP listServices index=%d name=%s\n",
+               index,
+               service_name[0] ? service_name : "(empty)");
+
+        return send_aosp_string16_reply(fd,
+                                        tr->data.ptr.buffer,
+                                        service_name,
+                                        "sm-server AOSP listServices reply");
+    }
 
     if (tr->code != AOSP_SM_CHECK_SERVICE_TRANSACTION &&
         tr->code != AOSP_SM_GET_SERVICE_TRANSACTION) {

@@ -22,6 +22,7 @@
 
 #define AOSP_SM_DESCRIPTOR "android.os.IServiceManager"
 #define AOSP_SM_CHECK_SERVICE_TRANSACTION 2U
+#define AOSP_SM_LIST_SERVICES_TRANSACTION 4U
 
 struct sc_text_reply {
     uint32_t magic;
@@ -267,6 +268,186 @@ static uint32_t first_handle_from_transaction(struct binder_transaction_data *tr
         return 0;
 
     return obj->handle;
+}
+
+static int parcel_read_string16_ascii(const void *data, size_t size, char *out, size_t out_len)
+{
+    const uint8_t *p = (const uint8_t *)data;
+    int32_t len;
+    size_t bytes;
+    size_t padded;
+    size_t i;
+
+    if (!data || !out || out_len == 0 || size < sizeof(len))
+        return -1;
+
+    out[0] = '\0';
+
+    memcpy(&len, p, sizeof(len));
+    p += sizeof(len);
+    size -= sizeof(len);
+
+    if (len < 0)
+        return 0;
+
+    bytes = ((size_t)len + 1U) * 2U;
+    padded = align4(bytes);
+
+    if (padded > size)
+        return -1;
+
+    for (i = 0; i < (size_t)len && i + 1 < out_len; i++) {
+        uint8_t lo = p[i * 2U];
+        uint8_t hi = p[i * 2U + 1U];
+
+        out[i] = hi == 0 ? (char)lo : '?';
+    }
+
+    out[i < out_len ? i : out_len - 1] = '\0';
+    return 0;
+}
+
+static int aosp_list_one_service(int fd, int32_t index, char *out, size_t out_len)
+{
+    uint8_t parcel[512];
+    size_t parcel_size = 0;
+    uint8_t writebuf[1024];
+    uint8_t readbuf[8192];
+    uint8_t *p = writebuf;
+    uint32_t cmd;
+    struct binder_transaction_data tr;
+    int first = 1;
+
+    if (parcel_write_i32(parcel, sizeof(parcel), &parcel_size, 0) != 0 ||
+        parcel_write_string16_ascii(parcel, sizeof(parcel), &parcel_size, AOSP_SM_DESCRIPTOR) != 0 ||
+        parcel_write_i32(parcel, sizeof(parcel), &parcel_size, index) != 0) {
+        fprintf(stderr, "failed to build AOSP listServices Parcel\n");
+        return -1;
+    }
+
+    memset(&tr, 0, sizeof(tr));
+    tr.target.handle = 0;
+    tr.code = AOSP_SM_LIST_SERVICES_TRANSACTION;
+    tr.flags = TF_ACCEPT_FDS;
+    tr.data_size = parcel_size;
+    tr.offsets_size = 0;
+    tr.data.ptr.buffer = (binder_uintptr_t)parcel;
+    tr.data.ptr.offsets = 0;
+
+    cmd = BC_TRANSACTION;
+    append_u32(&p, cmd);
+    append_bytes(&p, &tr, sizeof(tr));
+
+    for (;;) {
+        int n;
+        uint8_t *ptr;
+        uint8_t *end;
+
+        if (first) {
+            n = binder_write_read(fd,
+                                  writebuf,
+                                  (size_t)(p - writebuf),
+                                  readbuf,
+                                  sizeof(readbuf),
+                                  "aosp listServices call");
+            first = 0;
+        } else {
+            n = binder_write_read(fd,
+                                  NULL,
+                                  0,
+                                  readbuf,
+                                  sizeof(readbuf),
+                                  "aosp listServices wait");
+        }
+
+        if (n < 0)
+            return -1;
+
+        ptr = readbuf;
+        end = readbuf + n;
+
+        while (ptr + sizeof(uint32_t) <= end) {
+            uint32_t rcmd;
+
+            memcpy(&rcmd, ptr, sizeof(rcmd));
+            ptr += sizeof(rcmd);
+
+            printf("aosp listServices got %s 0x%08x\n", cmd_name(rcmd), rcmd);
+
+            if (rcmd == BR_REPLY) {
+                struct binder_transaction_data reply;
+
+                if (ptr + sizeof(reply) > end)
+                    return -1;
+
+                memcpy(&reply, ptr, sizeof(reply));
+                ptr += sizeof(reply);
+
+                if (reply.data.ptr.buffer) {
+                    if (parcel_read_string16_ascii((void *)(uintptr_t)reply.data.ptr.buffer,
+                                                   (size_t)reply.data_size,
+                                                   out,
+                                                   out_len) != 0) {
+                        binder_free_buffer(fd, reply.data.ptr.buffer);
+                        return -1;
+                    }
+
+                    binder_free_buffer(fd, reply.data.ptr.buffer);
+                    return 0;
+                }
+
+                out[0] = '\0';
+                return 0;
+            }
+
+            if (rcmd == BR_NOOP || rcmd == BR_TRANSACTION_COMPLETE)
+                continue;
+
+            if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY) {
+                fprintf(stderr, "aosp listServices failed cmd=0x%08x\n", rcmd);
+                return 1;
+            }
+
+            if (rcmd == BR_INCREFS ||
+                rcmd == BR_ACQUIRE ||
+                rcmd == BR_RELEASE ||
+                rcmd == BR_DECREFS) {
+                if (handle_ref_cmd(fd, rcmd, &ptr, end, "aosp listServices") != 0)
+                    return -1;
+                continue;
+            }
+
+            fprintf(stderr, "aosp listServices unhandled cmd=0x%08x\n", rcmd);
+            return -1;
+        }
+    }
+}
+
+static int aosp_list_services_contains(int fd, const char *wanted)
+{
+    int32_t i;
+
+    printf("AOSP listServices looking for %s\n", wanted);
+
+    for (i = 0; i < 32; i++) {
+        char name[128];
+
+        if (aosp_list_one_service(fd, i, name, sizeof(name)) != 0)
+            return -1;
+
+        printf("AOSP listServices[%d]=%s\n", i, name[0] ? name : "(empty)");
+
+        if (name[0] == '\0')
+            break;
+
+        if (strcmp(name, wanted) == 0) {
+            printf("AOSP_LIST_SERVICES_OK\n");
+            return 0;
+        }
+    }
+
+    fprintf(stderr, "AOSP listServices did not contain %s\n", wanted);
+    return 1;
 }
 
 static int aosp_check_service(int fd, const char *name, uint32_t *out_handle)
@@ -519,6 +700,9 @@ int main(int argc, char **argv)
     uint32_t handle = 0;
 
     fd = binder_open_and_init();
+
+    if (aosp_list_services_contains(fd, name) != 0)
+        return 1;
 
     printf("AOSP checkService name=%s\n", name);
 

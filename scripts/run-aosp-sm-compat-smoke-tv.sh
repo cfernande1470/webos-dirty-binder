@@ -82,6 +82,7 @@ if [ "$probe_rc" -ne 0 ]; then
   exit "$probe_rc"
 fi
 
+grep -q 'AOSP_LIST_SERVICES_OK' logs/aosp_sm_probe.log
 grep -q 'AOSP_SM_COMPAT_OK' logs/aosp_sm_probe.log
 
 echo "AOSP_SM_COMPAT_SMOKE_OK"
