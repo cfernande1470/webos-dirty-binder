@@ -63,6 +63,7 @@ int main(int argc, char **argv)
         return 1;
 
     printf("LIBBINDER_LITE_ALIAS_SERVICE_OK\n");
+    printf("LIBBINDER_LITE_PARCEL_TRANSACT_OK\n");
     printf("LIBBINDER_LITE_API_CLIENT_OK\n");
     printf("LIBBINDER_LITE_CLIENT_OK\n");
     return 0;

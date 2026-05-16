@@ -70,6 +70,7 @@ if [ "$client_rc" -ne 0 ]; then
   exit "$client_rc"
 fi
 
+grep -q 'LIBBINDER_LITE_PARCEL_TRANSACT_OK' logs/libbinder_lite_client.log
 grep -q 'LIBBINDER_LITE_API_CLIENT_OK' logs/libbinder_lite_client.log
 grep -q 'LIBBINDER_LITE_CLIENT_OK' logs/libbinder_lite_client.log
 

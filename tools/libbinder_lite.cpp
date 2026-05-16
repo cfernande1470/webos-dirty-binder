@@ -1002,6 +1002,92 @@ static int call_echo_handle(int fd, uint32_t handle)
 
 namespace android_lite {
 
+Parcel::Parcel()
+    : size_(0)
+{
+    memset(data_, 0, sizeof(data_));
+}
+
+void Parcel::reset()
+{
+    memset(data_, 0, sizeof(data_));
+    size_ = 0;
+}
+
+int Parcel::writeBytes(const void *data, size_t size)
+{
+    if (!data && size)
+        return -1;
+
+    if (size_ + size > kCapacity)
+        return -1;
+
+    if (size)
+        memcpy(data_ + size_, data, size);
+
+    size_ += size;
+    return 0;
+}
+
+int Parcel::writeCString(const char *str)
+{
+    size_t len;
+
+    if (!str)
+        str = "";
+
+    len = strlen(str) + 1U;
+    return writeBytes(str, len);
+}
+
+const void *Parcel::data() const
+{
+    return data_;
+}
+
+size_t Parcel::size() const
+{
+    return size_;
+}
+
+int Parcel::assign(const void *data, size_t size)
+{
+    reset();
+
+    if (!data && size)
+        return -1;
+
+    if (size > kCapacity)
+        return -1;
+
+    if (size)
+        memcpy(data_, data, size);
+
+    size_ = size;
+    return 0;
+}
+
+int Parcel::readSidecarTextReply(uint32_t *status, const char **text) const
+{
+    const struct sc_text_reply *reply;
+
+    if (size_ < sizeof(struct sc_text_reply))
+        return -1;
+
+    reply = (const struct sc_text_reply *)data_;
+
+    if (reply->magic != SC_MAGIC)
+        return -1;
+
+    if (status)
+        *status = reply->status;
+
+    if (text)
+        *text = reply->text;
+
+    return 0;
+}
+
 BinderDriver::BinderDriver()
     : fd_(binder_open_and_init())
 {
@@ -1032,14 +1118,144 @@ uint32_t BpBinder::handle() const
     return handle_;
 }
 
+int BpBinder::transact(uint32_t code, const Parcel &data, Parcel *reply) const
+{
+    uint8_t writebuf[1024];
+    uint8_t readbuf[8192];
+    uint8_t *p = writebuf;
+    uint32_t cmd;
+    struct binder_transaction_data tr;
+    int first = 1;
+
+    if (!valid()) {
+        fprintf(stderr, "libbinder-lite transact invalid handle\n");
+        return 1;
+    }
+
+    if (reply)
+        reply->reset();
+
+    memset(&tr, 0, sizeof(tr));
+    tr.target.handle = handle_;
+    tr.code = code;
+    tr.flags = TF_ACCEPT_FDS;
+    tr.data_size = data.size();
+    tr.offsets_size = 0;
+    tr.data.ptr.buffer = (binder_uintptr_t)data.data();
+    tr.data.ptr.offsets = 0;
+
+    cmd = BC_TRANSACTION;
+    append_u32(&p, cmd);
+    append_bytes(&p, &tr, sizeof(tr));
+
+    for (;;) {
+        int n;
+        uint8_t *ptr;
+        uint8_t *end;
+
+        if (first) {
+            n = binder_write_read(fd_,
+                                  writebuf,
+                                  (size_t)(p - writebuf),
+                                  readbuf,
+                                  sizeof(readbuf),
+                                  "libbinder-lite transact call");
+            first = 0;
+        } else {
+            n = binder_write_read(fd_,
+                                  NULL,
+                                  0,
+                                  readbuf,
+                                  sizeof(readbuf),
+                                  "libbinder-lite transact wait");
+        }
+
+        if (n < 0)
+            return -1;
+
+        ptr = readbuf;
+        end = readbuf + n;
+
+        while (ptr + sizeof(uint32_t) <= end) {
+            uint32_t rcmd;
+
+            memcpy(&rcmd, ptr, sizeof(rcmd));
+            ptr += sizeof(rcmd);
+
+            printf("libbinder-lite transact got %s 0x%08x\n", cmd_name(rcmd), rcmd);
+
+            if (rcmd == BR_REPLY) {
+                struct binder_transaction_data r;
+
+                if (ptr + sizeof(r) > end)
+                    return -1;
+
+                memcpy(&r, ptr, sizeof(r));
+                ptr += sizeof(r);
+
+                if (reply && r.data.ptr.buffer && r.data_size) {
+                    if (reply->assign((void *)(uintptr_t)r.data.ptr.buffer,
+                                      (size_t)r.data_size) != 0) {
+                        binder_free_buffer(fd_, r.data.ptr.buffer);
+                        return -1;
+                    }
+                }
+
+                if (r.data.ptr.buffer)
+                    binder_free_buffer(fd_, r.data.ptr.buffer);
+
+                return 0;
+            }
+
+            if (rcmd == BR_NOOP || rcmd == BR_TRANSACTION_COMPLETE)
+                continue;
+
+            if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY) {
+                fprintf(stderr, "libbinder-lite transact failed cmd=0x%08x\n", rcmd);
+                return 1;
+            }
+
+            if (rcmd == BR_INCREFS ||
+                rcmd == BR_ACQUIRE ||
+                rcmd == BR_RELEASE ||
+                rcmd == BR_DECREFS) {
+                if (handle_ref_cmd(fd_, rcmd, &ptr, end, "libbinder-lite transact") != 0)
+                    return -1;
+                continue;
+            }
+
+            fprintf(stderr, "libbinder-lite transact unhandled cmd=0x%08x\n", rcmd);
+            return -1;
+        }
+    }
+}
+
 int BpBinder::transactEcho() const
 {
+    Parcel data;
+    Parcel reply;
+    uint32_t status = 0xffffffffU;
+    const char *text = NULL;
+
     if (!valid()) {
         fprintf(stderr, "libbinder-lite BpBinder invalid handle\n");
         return 1;
     }
 
-    return call_echo_handle(fd_, handle_);
+    if (data.writeCString("hello from libbinder-lite Parcel") != 0)
+        return -1;
+
+    if (transact(SC_CODE_ECHO, data, &reply) != 0)
+        return 1;
+
+    if (reply.readSidecarTextReply(&status, &text) != 0)
+        return -1;
+
+    printf("libbinder-lite Parcel echo reply status=%u text=%s\n",
+           status,
+           text ? text : "(null)");
+
+    return status == 0 ? 0 : 1;
 }
 
 ServiceManagerProxy::ServiceManagerProxy(BinderDriver &driver)
