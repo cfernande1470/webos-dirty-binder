@@ -38,4 +38,10 @@ echo "== AOSP ServiceManager compatibility smoke =="
 echo "== libbinder-lite client smoke =="
 ./scripts/run-libbinder-lite-client-smoke-tv.sh
 
+echo "== Android-like API smoke =="
+./scripts/run-android-like-api-smoke-tv.sh
+
+echo "== Android-like service smoke =="
+./scripts/run-android-like-service-smoke-tv.sh
+
 echo "ALL_SIDECAR_SMOKE_OK"
