@@ -23,6 +23,7 @@
 #define AOSP_SM_DESCRIPTOR "android.os.IServiceManager"
 #define AOSP_SM_GET_SERVICE_TRANSACTION 1U
 #define AOSP_SM_CHECK_SERVICE_TRANSACTION 2U
+#define AOSP_SM_ADD_SERVICE_TRANSACTION 3U
 #define AOSP_SM_LIST_SERVICES_TRANSACTION 4U
 
 struct sc_text_reply {
@@ -715,6 +716,176 @@ static int aosp_get_service(int fd, const char *name, uint32_t *out_handle)
     }
 }
 
+static size_t align8(size_t n)
+{
+    return (n + 7U) & ~7U;
+}
+
+static int parcel_read_i32(const void *data, size_t size, int32_t *out)
+{
+    if (!data || !out || size < sizeof(*out))
+        return -1;
+
+    memcpy(out, data, sizeof(*out));
+    return 0;
+}
+
+static int aosp_add_service_handle(int fd, const char *name, uint32_t service_handle)
+{
+    uint8_t parcel[1024];
+    size_t parcel_size = 0;
+    binder_size_t offsets[1];
+    struct flat_binder_object obj;
+    uint8_t writebuf[2048];
+    uint8_t readbuf[8192];
+    uint8_t *p = writebuf;
+    uint32_t cmd;
+    struct binder_transaction_data tr;
+    int first = 1;
+
+    printf("AOSP addService name=%s handle=%u\n", name, service_handle);
+
+    if (parcel_write_i32(parcel, sizeof(parcel), &parcel_size, 0) != 0 ||
+        parcel_write_string16_ascii(parcel, sizeof(parcel), &parcel_size, AOSP_SM_DESCRIPTOR) != 0 ||
+        parcel_write_string16_ascii(parcel, sizeof(parcel), &parcel_size, name) != 0) {
+        fprintf(stderr, "failed to build AOSP addService Parcel header\n");
+        return -1;
+    }
+
+    parcel_size = align8(parcel_size);
+
+    if (parcel_size + sizeof(obj) + sizeof(int32_t) > sizeof(parcel)) {
+        fprintf(stderr, "AOSP addService Parcel too large\n");
+        return -1;
+    }
+
+    memset(parcel + parcel_size, 0, sizeof(parcel) - parcel_size);
+
+    memset(&obj, 0, sizeof(obj));
+    obj.type = BINDER_TYPE_HANDLE;
+    obj.flags = FLAT_BINDER_FLAG_ACCEPTS_FDS;
+    obj.handle = service_handle;
+    obj.cookie = 0;
+
+    offsets[0] = (binder_size_t)parcel_size;
+    memcpy(parcel + parcel_size, &obj, sizeof(obj));
+    parcel_size += sizeof(obj);
+
+    parcel_size = align8(parcel_size);
+
+    /*
+     * Classic IServiceManager::addService also writes allowIsolated.
+     * Newer implementations may include dump flags, but allowIsolated is
+     * enough for this compatibility probe.
+     */
+    if (parcel_write_i32(parcel, sizeof(parcel), &parcel_size, 0) != 0) {
+        fprintf(stderr, "failed to append allowIsolated\n");
+        return -1;
+    }
+
+    memset(&tr, 0, sizeof(tr));
+    tr.target.handle = 0;
+    tr.code = AOSP_SM_ADD_SERVICE_TRANSACTION;
+    tr.flags = TF_ACCEPT_FDS;
+    tr.data_size = parcel_size;
+    tr.offsets_size = sizeof(offsets);
+    tr.data.ptr.buffer = (binder_uintptr_t)parcel;
+    tr.data.ptr.offsets = (binder_uintptr_t)offsets;
+
+    cmd = BC_TRANSACTION;
+    append_u32(&p, cmd);
+    append_bytes(&p, &tr, sizeof(tr));
+
+    for (;;) {
+        int n;
+        uint8_t *ptr;
+        uint8_t *end;
+
+        if (first) {
+            n = binder_write_read(fd,
+                                  writebuf,
+                                  (size_t)(p - writebuf),
+                                  readbuf,
+                                  sizeof(readbuf),
+                                  "aosp addService call");
+            first = 0;
+        } else {
+            n = binder_write_read(fd,
+                                  NULL,
+                                  0,
+                                  readbuf,
+                                  sizeof(readbuf),
+                                  "aosp addService wait");
+        }
+
+        if (n < 0)
+            return -1;
+
+        ptr = readbuf;
+        end = readbuf + n;
+
+        while (ptr + sizeof(uint32_t) <= end) {
+            uint32_t rcmd;
+
+            memcpy(&rcmd, ptr, sizeof(rcmd));
+            ptr += sizeof(rcmd);
+
+            printf("aosp addService got %s 0x%08x\n", cmd_name(rcmd), rcmd);
+
+            if (rcmd == BR_REPLY) {
+                struct binder_transaction_data reply;
+                int32_t status = -999;
+
+                if (ptr + sizeof(reply) > end)
+                    return -1;
+
+                memcpy(&reply, ptr, sizeof(reply));
+                ptr += sizeof(reply);
+
+                if (reply.data.ptr.buffer &&
+                    parcel_read_i32((void *)(uintptr_t)reply.data.ptr.buffer,
+                                    (size_t)reply.data_size,
+                                    &status) != 0) {
+                    binder_free_buffer(fd, reply.data.ptr.buffer);
+                    return -1;
+                }
+
+                if (reply.data.ptr.buffer)
+                    binder_free_buffer(fd, reply.data.ptr.buffer);
+
+                printf("AOSP addService reply status=%d\n", status);
+
+                if (status == 0) {
+                    printf("AOSP_ADD_SERVICE_OK\n");
+                    return 0;
+                }
+
+                return 1;
+            }
+
+            if (rcmd == BR_NOOP || rcmd == BR_TRANSACTION_COMPLETE)
+                continue;
+
+            if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY) {
+                fprintf(stderr, "aosp addService failed cmd=0x%08x\n", rcmd);
+                return 1;
+            }
+
+            if (rcmd == BR_INCREFS ||
+                rcmd == BR_ACQUIRE ||
+                rcmd == BR_RELEASE ||
+                rcmd == BR_DECREFS) {
+                if (handle_ref_cmd(fd, rcmd, &ptr, end, "aosp addService") != 0)
+                    return -1;
+                continue;
+            }
+
+            fprintf(stderr, "aosp addService unhandled cmd=0x%08x\n", rcmd);
+            return -1;
+        }
+    }
+}
+
 static int call_echo_handle(int fd, uint32_t handle)
 {
     const char payload[] = "hello from AOSP SM probe";
@@ -862,6 +1033,26 @@ int main(int argc, char **argv)
         return 1;
 
     printf("AOSP_GET_SERVICE_OK\n");
+
+    if (aosp_add_service_handle(fd, "test.aosp.alias", handle) != 0)
+        return 1;
+
+    if (aosp_list_services_contains(fd, "test.aosp.alias") != 0)
+        return 1;
+
+    handle = 0;
+
+    printf("AOSP checkService alias name=test.aosp.alias\n");
+
+    if (aosp_check_service(fd, "test.aosp.alias", &handle) != 0)
+        return 1;
+
+    printf("AOSP checkService alias got handle=%u\n", handle);
+
+    if (call_echo_handle(fd, handle) != 0)
+        return 1;
+
+    printf("AOSP_ALIAS_SERVICE_OK\n");
 
     printf("AOSP_SM_COMPAT_OK\n");
     return 0;

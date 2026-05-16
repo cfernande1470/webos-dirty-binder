@@ -964,6 +964,40 @@ static int aosp_write_string16_ascii(uint8_t *buf, size_t cap, size_t *pos, cons
     return 0;
 }
 
+static int send_aosp_i32_reply(int fd,
+                               binder_uintptr_t incoming_buffer,
+                               int32_t value,
+                               const char *tag)
+{
+    uint8_t parcel[32];
+    size_t parcel_size = 0;
+    uint8_t writebuf[256];
+    uint8_t *p = writebuf;
+    uint32_t cmd;
+    struct binder_transaction_data reply_tr;
+
+    if (aosp_write_i32(parcel, sizeof(parcel), &parcel_size, value) != 0)
+        return -1;
+
+    cmd = BC_FREE_BUFFER;
+    append_u32(&p, cmd);
+    append_bytes(&p, &incoming_buffer, sizeof(incoming_buffer));
+
+    cmd = BC_REPLY;
+    append_u32(&p, cmd);
+
+    memset(&reply_tr, 0, sizeof(reply_tr));
+    reply_tr.data_size = parcel_size;
+    reply_tr.offsets_size = 0;
+    reply_tr.data.ptr.buffer = (binder_uintptr_t)parcel;
+    reply_tr.data.ptr.offsets = 0;
+
+    append_bytes(&p, &reply_tr, sizeof(reply_tr));
+
+    printf("sm-server: AOSP i32 reply value=%d\n", value);
+    return binder_write_read(fd, writebuf, (size_t)(p - writebuf), NULL, 0, tag) < 0 ? -1 : 0;
+}
+
 static int send_aosp_string16_reply(int fd,
                                     binder_uintptr_t incoming_buffer,
                                     const char *str,
@@ -1007,6 +1041,77 @@ static int process_aosp_sm_transaction(int fd, struct binder_transaction_data *t
 {
     char name[NAME_LEN];
     uint32_t handle;
+
+
+    if (tr->code == AOSP_SM_ADD_SERVICE_TRANSACTION) {
+        char name[NAME_LEN];
+        uint32_t handle;
+        struct service_entry *entry;
+
+        if (aosp_parse_sm_name(tr, name, sizeof(name)) != 0) {
+            printf("sm-server: AOSP addService bad parcel\n");
+            return send_aosp_i32_reply(fd,
+                                       tr->data.ptr.buffer,
+                                       -1,
+                                       "sm-server AOSP addService bad parcel reply");
+        }
+
+        handle = first_handle_from_transaction(tr);
+        if (!handle) {
+            printf("sm-server: AOSP addService missing binder handle name=%s\n", name);
+            return send_aosp_i32_reply(fd,
+                                       tr->data.ptr.buffer,
+                                       -2,
+                                       "sm-server AOSP addService nohandle reply");
+        }
+
+        if (registry_add(name, handle) != 0) {
+            printf("sm-server: AOSP addService registry full name=%s handle=%u\n",
+                   name,
+                   handle);
+            return send_aosp_i32_reply(fd,
+                                       tr->data.ptr.buffer,
+                                       -3,
+                                       "sm-server AOSP addService full reply");
+        }
+
+        if (binder_send_handle_cmd(fd,
+                                   BC_ACQUIRE,
+                                   handle,
+                                   "sm-server AOSP BC_ACQUIRE service handle") != 0) {
+            return send_aosp_i32_reply(fd,
+                                       tr->data.ptr.buffer,
+                                       -4,
+                                       "sm-server AOSP addService acquire-failed reply");
+        }
+
+        entry = registry_find_by_name(name);
+        if (!entry) {
+            return send_aosp_i32_reply(fd,
+                                       tr->data.ptr.buffer,
+                                       -5,
+                                       "sm-server AOSP addService registry-lost reply");
+        }
+
+        entry->death_cookie = next_death_cookie();
+
+        if (binder_send_handle_cookie_cmd(fd,
+                                          SIDE_BC_REQUEST_DEATH_NOTIFICATION_RAW,
+                                          handle,
+                                          entry->death_cookie,
+                                          "AOSP BC_REQUEST_DEATH_NOTIFICATION_RAW service handle") != 0) {
+            printf("sm-server: AOSP death notification request failed; continuing without death cleanup\n");
+            entry->death_cookie = 0;
+        }
+
+        printf("sm-server: AOSP addService name=%s handle=%u\n", name, handle);
+        registry_dump();
+
+        return send_aosp_i32_reply(fd,
+                                   tr->data.ptr.buffer,
+                                   0,
+                                   "sm-server AOSP addService reply");
+    }
 
     if (tr->code == AOSP_SM_LIST_SERVICES_TRANSACTION) {
         int32_t index = 0;
