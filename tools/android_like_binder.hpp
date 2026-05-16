@@ -117,6 +117,14 @@ public:
         {
             return binder_.waitForDeathNotification(expected_cookie, timeout_sec);
         }
+        int waitForClearDeathNotification(uintptr_t expected_cookie, int timeout_sec) const
+        {
+            return binder_.waitForClearDeathNotification(expected_cookie, timeout_sec);
+        }
+        int waitForNoDeathNotification(uintptr_t unexpected_cookie, int timeout_sec) const
+        {
+            return binder_.waitForNoDeathNotification(unexpected_cookie, timeout_sec);
+        }
 int transact(uint32_t code, const Parcel &data, Parcel *reply) const {
         return binder_.transact(code,
                                 data.lite(),

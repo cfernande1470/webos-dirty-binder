@@ -56,6 +56,8 @@ public:
     int linkToDeath(uintptr_t cookie) const;
     int unlinkToDeath(uintptr_t cookie) const;
     int waitForDeathNotification(uintptr_t expected_cookie, int timeout_sec) const;
+    int waitForClearDeathNotification(uintptr_t expected_cookie, int timeout_sec) const;
+    int waitForNoDeathNotification(uintptr_t unexpected_cookie, int timeout_sec) const;
 
 private:
     int fd_;

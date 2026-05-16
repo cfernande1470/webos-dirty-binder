@@ -53,6 +53,9 @@ echo "== Android-like restart recovery smoke =="
 echo "== Android-like death recipient smoke =="
 ./scripts/run-android-like-death-recipient-smoke-tv.sh
 
+echo "== Android-like unlink death smoke =="
+./scripts/run-android-like-unlink-death-smoke-tv.sh
+
 echo "== Android-like concurrent lifecycle smoke =="
 ./scripts/run-android-like-concurrent-lifecycle-smoke-tv.sh
 
