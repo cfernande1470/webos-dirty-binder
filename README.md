@@ -1,222 +1,257 @@
-# webOS Dirty Binder
+# webos-dirty-binder
 
-Experimental Android Binder kernel module work for LG webOS TVs.
+Experimental Android Binder IPC module for rooted LG webOS TVs.
 
-> ⚠️ **Danger / brick warning**
->
-> This repository is for kernel-module research on already-rooted LG webOS TVs.
-> Do **not** overwrite LG system partitions such as kernel, rootfs, boot,
-> recovery, tvservice, or similar partitions. A bad write there can brick the TV.
->
-> Keep all tests temporary: copy binaries to `/tmp`, load the module manually,
-> and reboot to clean up.
+This repository explores whether the Android Binder driver can be built and loaded as an out-of-tree kernel module on LG webOS TV kernels, without flashing or replacing system partitions.
 
-## Current status
+> **Status:** experimental research / proof of concept.  
+> **Do not install this module at boot.** Load it manually from `/tmp` while testing.
 
-This project now reaches a first real Binder transaction round-trip on an LG webOS TV using kernel:
+---
 
-```text
-4.4.84-229.1.kavir.2
-```
+## Current milestone
 
-Confirmed working:
+The project has moved beyond basic Binder ioctls.
 
-- Build an out-of-tree `binder.ko` for LG webOS kernel `4.4.84-229.1.kavir.2`.
-- Load the module manually on the TV.
-- Create `/dev/binder`.
-- Run `BINDER_VERSION` successfully.
-- Run `BINDER_SET_MAX_THREADS` successfully.
-- `mmap()` the Binder buffer.
-- Register a Binder context manager with `BINDER_SET_CONTEXT_MGR`.
-- Enter the Binder looper with `BC_ENTER_LOOPER`.
-- Send `BC_TRANSACTION` from a client to handle `0`.
-- Receive `BR_TRANSACTION` in the server.
-- Send `BC_REPLY` from the server.
-- Receive `BR_REPLY` in the client.
-- Release the reply buffer using write-only `BC_FREE_BUFFER`.
+Confirmed working on the tested LG webOS TV target:
 
-Observed successful client output:
+- Load `binder.ko`
+- Create `/dev/binder`
+- `BINDER_VERSION`
+- `BINDER_SET_MAX_THREADS`
+- Binder `mmap()`
+- `BINDER_SET_CONTEXT_MGR`
+- `BC_ENTER_LOOPER`
+- Plain Binder transaction round-trip:
+  - client sends `BC_TRANSACTION`
+  - server receives `BR_TRANSACTION`
+  - server sends `BC_REPLY`
+  - client receives `BR_REPLY`
+  - client releases buffer with write-only `BC_FREE_BUFFER`
+- Binder object passing:
+  - client sends `BINDER_TYPE_BINDER`
+  - server receives it as `BINDER_TYPE_HANDLE`
+- Binder callback:
+  - server calls back into the client-exported Binder object
+  - client receives callback `BR_TRANSACTION`
+  - client replies with `BC_REPLY`
+  - server receives callback `BR_REPLY`
 
-```text
-open /dev/binder
-ioctl BINDER_VERSION
-binder protocol_version=8
-ioctl BINDER_SET_MAX_THREADS
-BINDER_SET_MAX_THREADS ok
-mmap binder size=1048576
-client sending transaction to handle 0
-client_call: BINDER_WRITE_READ write_size=68 read_size=8192
-client_call: write_consumed=68 read_consumed=76
-client got cmd=0x0000720c
-client BR_NOOP
-client got cmd=0x00007206
-client BR_TRANSACTION_COMPLETE
-client got cmd=0x80407203
-client BR_REPLY code=0x0 flags=0x0 data_size=30 offsets_size=0
-client reply payload: PONG from webOS binder server
-free buffer ... write-only
-free_buffer: write_consumed=12 read_consumed=0
-```
+This means the PoC now demonstrates real Binder IPC in both directions.
 
-Observed successful server output:
+---
+
+## Tested target
+
+Known working target:
 
 ```text
-open /dev/binder
-ioctl BINDER_VERSION
-binder protocol_version=8
-ioctl BINDER_SET_MAX_THREADS
-BINDER_SET_MAX_THREADS ok
-mmap binder size=1048576
-ioctl BINDER_SET_CONTEXT_MGR
-BINDER_SET_CONTEXT_MGR ok
-server_enter_looper: BINDER_WRITE_READ write_size=4 read_size=8192
-server_enter_looper: write_consumed=4 read_consumed=72
-server_process_readbuf: n=72
-server got cmd=0x0000720d
-server BR_SPAWN_LOOPER ignored
-server got cmd=0x80407202
-server BR_TRANSACTION code=0x50494e47 flags=0x10 sender_euid=0
-server payload: PING from webOS binder client
-server_reply: BINDER_WRITE_READ write_size=80 read_size=8192
-server_reply: write_consumed=80 read_consumed=8
-server_reply completed
-server waiting for transactions
+Device family: LG webOS TV
+Kernel:        4.4.84-229.1.kavir.2
+Architecture:  arm64 / aarch64
+Binder proto:  8
 ```
+
+Original development target:
+
+```text
+LG OLED C1
+webOS TV 6.2.0
+O20 platform
+```
+
+Other LG webOS versions may require different kernel symbols, offsets, configs, or patches.
+
+---
+
+## What this is
+
+This is a kernel/Binder research project.
+
+It is useful for:
+
+- Understanding Binder IPC on a non-Android Linux environment
+- Testing Binder transactions on webOS
+- Experimenting with Binder object passing
+- Experimenting with Binder callbacks
+- Building future Binder-to-webOS bridge experiments
+- Investigating whether small Android-native Binder services can run on webOS
+
+---
 
 ## What this is not
 
-This is **not** Android TV on webOS.
+This is **not**:
 
-This does not provide:
+- Android TV for LG webOS
+- Waydroid for LG webOS
+- Anbox for LG webOS
+- APK app support
+- A complete Android userspace
+- A graphics/audio/input compatibility layer
+- A safe production module
+- A boot-time service
 
-- Android userspace
-- Android init
+The module currently does **not** provide:
+
+- `ashmem`
+- `binderfs`
+- Android `init`
+- Android service manager integration
 - SELinux policy
-- Waydroid
-- Anbox
-- hwbinder support
-- vndbinder support
-- ashmem
-- Android graphics stack
-- Android audio HALs
-- Android input HALs
-- APK runtime support
+- Android HALs
+- Android framework services
+- SurfaceFlinger
+- AudioFlinger
+- ActivityManager
+- PackageManager
+- InputFlinger
+- Hardware Composer
 
-This repository currently proves that a dirty Binder kernel-module experiment can create `/dev/binder` and complete a minimal Binder transaction round-trip.
+---
+
+## Safety warning
+
+This is an out-of-tree kernel module for a TV.
+
+A bad Binder transaction can crash the kernel.
+
+Recommended safety rules:
+
+- Load only from `/tmp`
+- Do not install into boot scripts
+- Do not modify boot, recovery, kernel, rootfs, or tvservice partitions
+- Reboot between risky tests
+- Keep SSH access working
+- Keep the TV on a trusted local network
+- Do not expose SSH or Binder experiments to the internet
+
+If the module Oopses, reboot the TV before continuing.
+
+---
 
 ## Repository layout
 
-```text
-patches/
-  0001-lg-webos-dirty-binder-module.patch
-
-scripts/
-  build-module.sh        Build patched binder.ko
-  build-probe.sh         Build simple Binder probe tool
-  build-ping.sh          Build Binder transaction ping test
-  load-binder-tv.sh      Load module on TV from /tmp
-
-src/
-  binder_dirty_exports.h Dirty wrappers for non-exported LG kernel symbols
-
-tools/
-  binder_probe.c         Minimal BINDER_VERSION / BINDER_SET_MAX_THREADS test
-  binder_ping.c          Minimal Binder server/client transaction test
-
-docs/
-  transaction-ping.md    Notes about the first transaction milestone
-
-artifacts/
-  *.ko                   Built kernel module output
-```
-
-## Build requirements
-
-The build host used during testing was an ARM64 Ubuntu machine:
+Common files:
 
 ```text
-Ubuntu 24.04.x aarch64
+scripts/build-module.sh       Build the dirty Binder kernel module
+scripts/load-binder-tv.sh     Load the module on the TV
+scripts/build-probe.sh        Build the basic Binder probe
+scripts/build-ping.sh         Build the Binder transaction/object test tool
+tools/binder_probe.c          Basic Binder ioctl probe
+tools/binder_ping.c           Binder IPC test tool
+patches/                      Kernel/module patches
+artifacts/                    Built module artifacts
+docs/                         Notes and milestone documentation
 ```
 
-Required tools:
+Generated files under `build/` should normally not be committed.
+
+---
+
+## Build prerequisites
+
+On the build host, install an aarch64 cross compiler.
+
+Example on Ubuntu/Debian:
 
 ```bash
 sudo apt update
-sudo apt install -y \
-  git build-essential bc bison flex libssl-dev libelf-dev \
-  python3 make gcc-aarch64-linux-gnu
+sudo apt install -y build-essential gcc-aarch64-linux-gnu git python3
 ```
 
-If building directly on ARM64, native `gcc` may also work. The scripts prefer `aarch64-linux-gnu-gcc` when available.
+The build host used during testing was a NanoPi running Ubuntu 24.04 on arm64.
 
-## Build
+---
 
-From the repository root:
+## Build module
+
+From the repo root:
 
 ```bash
 cd ~/disk/webos-dirty-binder
-
 ./scripts/build-module.sh
+```
+
+The generated module is expected at:
+
+```text
+build/linux-4.4.84/drivers/android/binder.ko
+```
+
+A copy may also be placed under `artifacts/`.
+
+---
+
+## Build test tools
+
+Build the basic probe:
+
+```bash
+cd ~/disk/webos-dirty-binder
 ./scripts/build-probe.sh
+```
+
+Build the Binder IPC test tool:
+
+```bash
+cd ~/disk/webos-dirty-binder
 ./scripts/build-ping.sh
 ```
 
 Expected outputs:
 
 ```text
-artifacts/binder-dirty-lgc1-o20-4.4.84-229.1.kavir.2.ko
 build/binder_probe_static
 build/binder_ping_static
 ```
 
-## Copy to TV
+---
 
-Set your TV IP:
+## Copy files to TV
+
+Replace the IP address with your TV IP.
 
 ```bash
+cd ~/disk/webos-dirty-binder
+
 TV_IP=192.168.2.121
-```
 
-Copy the module and tools to `/tmp`:
-
-```bash
-scp artifacts/binder-dirty-lgc1-o20-4.4.84-229.1.kavir.2.ko root@$TV_IP:/tmp/binder-dirty.ko
+scp build/linux-4.4.84/drivers/android/binder.ko root@$TV_IP:/tmp/binder-dirty.ko
 scp scripts/load-binder-tv.sh root@$TV_IP:/tmp/load-binder-tv.sh
 scp build/binder_probe_static root@$TV_IP:/tmp/binder_probe
 scp build/binder_ping_static root@$TV_IP:/tmp/binder_ping
 ```
 
+---
+
 ## Load module on TV
 
-SSH into the TV:
-
 ```bash
-ssh root@$TV_IP
-```
-
-Then run:
-
-```bash
+ssh root@192.168.2.121
 cd /tmp
 chmod +x /tmp/load-binder-tv.sh /tmp/binder_probe /tmp/binder_ping
-
-echo marker-before-binder-load > /dev/kmsg
 /tmp/load-binder-tv.sh /tmp/binder-dirty.ko
-
-ls -l /dev/binder
-grep binder /proc/modules
 ```
 
 Expected:
 
 ```text
-crw-------    1 root     root       10,  53 ... /dev/binder
-binder ... Live ...
+/dev/binder exists
+binder listed in /proc/modules
 ```
 
-## Probe test
+Check:
 
-On the TV:
+```bash
+ls -l /dev/binder
+grep binder /proc/modules
+```
+
+---
+
+## Basic probe
 
 ```bash
 /tmp/binder_probe
@@ -231,114 +266,146 @@ BINDER_SET_MAX_THREADS ok
 probe_exit=0
 ```
 
-## Binder ping round-trip test
+---
 
-The transaction test has two processes:
+## Plain transaction test
 
-- `binder_ping server`
-- `binder_ping client`
-
-### Start the server
+Start the server:
 
 ```bash
 cd /tmp
-
-rm -f /tmp/binder_ping_server.log \
-      /tmp/binder_ping_client.log \
-      /tmp/binder_ping_server.pid \
-      /tmp/binder_ping_client.exit
-
-echo marker-binder-ping-server > /dev/kmsg
-
-nohup /tmp/binder_ping server > /tmp/binder_ping_server.log 2>&1 &
-echo $! > /tmp/binder_ping_server.pid
-
-sleep 2
-cat /tmp/binder_ping_server.log
+./binder_ping server
 ```
 
-Expected server startup:
-
-```text
-open /dev/binder
-ioctl BINDER_VERSION
-binder protocol_version=8
-ioctl BINDER_SET_MAX_THREADS
-BINDER_SET_MAX_THREADS ok
-mmap binder size=1048576
-ioctl BINDER_SET_CONTEXT_MGR
-BINDER_SET_CONTEXT_MGR ok
-server_enter_looper: BINDER_WRITE_READ write_size=4 read_size=8192
-```
-
-### Run the client
+In another SSH session, run the client:
 
 ```bash
 cd /tmp
-
-echo marker-binder-ping-client > /dev/kmsg
-
-/tmp/binder_ping client > /tmp/binder_ping_client.log 2>&1
-echo "$?" > /tmp/binder_ping_client.exit
-
-cat /tmp/binder_ping_client.exit
-cat /tmp/binder_ping_client.log
-cat /tmp/binder_ping_server.log
+./binder_ping client
 ```
 
 Expected client result:
 
 ```text
-0
+client BR_REPLY
 client reply payload: PONG from webOS binder server
 free_buffer: write_consumed=12 read_consumed=0
 ```
 
-### Stop the server
+---
+
+## Object passing test
+
+Start object server:
 
 ```bash
-if [ -f /tmp/binder_ping_server.pid ]; then
-  kill "$(cat /tmp/binder_ping_server.pid)" 2>/dev/null || true
-fi
-
-ps | grep binder_ping | grep -v grep || true
+cd /tmp
+./binder_ping object-server
 ```
+
+In another SSH session, run object client:
+
+```bash
+cd /tmp
+./binder_ping object-client
+```
+
+Expected server result:
+
+```text
+object-server object[0]: ... BINDER_TYPE_HANDLE ... handle=1
+```
+
+This confirms that the client sent a local `BINDER_TYPE_BINDER` object and the Binder driver translated it into a remote `BINDER_TYPE_HANDLE`.
+
+---
+
+## Callback test
+
+The current `object-server` / `object-client` flow also tests callback behavior.
+
+Expected sequence:
+
+```text
+client sends BINDER_TYPE_BINDER
+server receives BINDER_TYPE_HANDLE handle=1
+server calls handle=1
+client receives callback BR_TRANSACTION
+client replies with BC_REPLY
+server receives callback BR_REPLY
+server replies to original client transaction
+client receives OBJECT OK
+```
+
+Expected server log fragment:
+
+```text
+object-server object[0]: offset=0 type=0x73682a85 BINDER_TYPE_HANDLE flags=0x00000100 binder=0x1 handle=1 cookie=0x0
+object-server calling client handle=1
+object-server callback BR_REPLY
+object-server callback reply payload: CLIENT CALLBACK OK
+```
+
+Expected client log fragment:
+
+```text
+object-client BR_INCREFS ...
+object-client BC_INCREFS_DONE ...
+object-client BR_ACQUIRE ...
+object-client BC_ACQUIRE_DONE ...
+object-client callback transaction code=0x43424b31
+object-client callback payload: CALLBACK from object-server
+object-client callback reply write_consumed=80 read_consumed=0
+object-client reply payload: OBJECT OK
+```
+
+---
 
 ## Important implementation notes
 
-### Dirty symbol access
+### `task_euid(proc->tsk)` crash
 
-LG's target kernel does not export every symbol needed by Binder as an external module. This project uses dirty wrappers and symbol addresses obtained from the target kernel to call required internals.
-
-This is fragile by design. A different TV model, SoC, kernel release, or LG kernel configuration may need different handling.
-
-### `task_euid(proc->tsk)` crash fix
-
-The original Binder transaction path crashed during `BC_TRANSACTION` here:
+The stock Binder transaction path crashed on this LG webOS kernel at:
 
 ```c
 t->sender_euid = task_euid(proc->tsk);
 ```
 
-On the tested LG webOS kernel, that path caused a NULL pointer dereference while reading task credentials.
+The observed crash was a NULL pointer dereference during `BC_TRANSACTION`.
 
-For this PoC, the generated Binder source is patched during `scripts/build-module.sh` to use:
+For this PoC, the module patches that path to:
 
 ```c
 t->sender_euid = current_euid();
 ```
 
-This keeps `sender_euid` meaningful for the task issuing the ioctl and allows real Binder transactions to complete.
+This keeps `sender_euid` meaningful for the userspace task issuing the ioctl and avoids the crash on the tested target.
+
+### Binder mmap allocation shim
+
+The module uses a Binder mmap allocation shim to avoid allocation/page mapping failures on this kernel.
+
+The shim allocates a page and inserts it into the userspace VMA with `vm_insert_page()`.
+
+Observed successful log pattern:
+
+```text
+binder_alloc_shim: before __get_free_page
+binder_alloc_shim: after __get_free_page
+binder_alloc_shim: virt_to_page
+binder_alloc_shim: before vm_insert_page
+binder_alloc_shim: after vm_insert_page ret=0
+```
 
 ### Do not ignore read data from `BC_ENTER_LOOPER`
 
-`BINDER_WRITE_READ` can return read commands in the same ioctl that writes `BC_ENTER_LOOPER`.
+`BINDER_WRITE_READ` can return `BR_TRANSACTION` in the same ioctl that writes `BC_ENTER_LOOPER`.
 
-The server must process the read buffer returned by `server_enter_looper`; otherwise it can miss the first `BR_TRANSACTION`.
+The server must process the read buffer returned by the enter-looper call.
 
-### `BC_FREE_BUFFER` must be write-only in this client
+### `BC_FREE_BUFFER` should be write-only
 
-After receiving `BR_REPLY`, the client frees the reply buffer with `BC_FREE_BUFFER`.
+After receiving a `BR_REPLY`, the client releases the reply buffer using `BC_FREE_BUFFER`.
 
 This must be sent write-only:
 
@@ -347,71 +414,169 @@ read_size = 0;
 read_buffer = 0;
 ```
 
-Using a non-zero read buffer here can make the client wait for process work without being a looper, producing:
+Otherwise the client can wait for process work without being a looper.
+
+### Binder object refcount commands
+
+When exporting a Binder object, the client can receive commands such as:
 
 ```text
-ERROR: Thread waiting for process work before calling BC_REGISTER_LOOPER or BC_ENTER_LOOPER
+BR_INCREFS
+BR_ACQUIRE
 ```
 
-## Debugging commands
-
-Useful TV-side commands:
-
-```bash
-dmesg | grep -E 'binder|Oops|Unable to handle|marker' | tail -n 300
-cat /proc/modules | grep binder
-cat /proc/misc | grep binder
-ls -l /dev/binder
-```
-
-Useful host-side commands:
-
-```bash
-strings artifacts/*.ko | grep -E 'binder_alloc_shim|binder_dirty|current_euid'
-modinfo artifacts/binder-dirty-lgc1-o20-4.4.84-229.1.kavir.2.ko
-```
-
-Map a kernel Oops offset back to source:
-
-```bash
-KO=build/linux-4.4.84/drivers/android/binder.ko
-OFFSET_HEX=0xeb8
-
-SYM_HEX="$(aarch64-linux-gnu-nm -n "$KO" | awk '$3=="binder_thread_write"{print $1; exit}')"
-ADDR="$(python3 - <<PY
-sym = int("$SYM_HEX", 16)
-off = int("$OFFSET_HEX", 16)
-print("0x%x" % (sym + off))
-PY
-)"
-
-aarch64-linux-gnu-addr2line -f -C -e "$KO" "$ADDR"
-```
-
-## Safety workflow
-
-Recommended workflow while testing:
-
-1. Reboot TV before testing a newly built module.
-2. Copy all files to `/tmp` only.
-3. Load `binder.ko` manually.
-4. Run probe first.
-5. Run transaction test.
-6. Inspect `dmesg`.
-7. Reboot after kernel Oops or suspicious behavior.
-8. Never install this module into boot scripts while developing.
-9. Never write LG system partitions.
-
-## Current milestone summary
-
-Current milestone:
+The client must consume their `binder_ptr_cookie` payloads and respond with:
 
 ```text
-/dev/binder + mmap + context manager + BC_TRANSACTION + BR_TRANSACTION + BC_REPLY + BC_FREE_BUFFER
+BC_INCREFS_DONE
+BC_ACQUIRE_DONE
 ```
 
-This is the first confirmed Binder transaction round-trip for this dirty LG webOS Binder module experiment.
+Otherwise the parser desynchronizes and payload words are mistaken for Binder commands.
 
-## License
+---
 
-Use the same license terms as the source tree and imported kernel/Binder code require.
+## Current capabilities
+
+Confirmed:
+
+- Binder device creation
+- Basic Binder ioctls
+- Binder mmap
+- Context manager
+- Blocking Binder server loop
+- Synchronous client transaction
+- Synchronous server reply
+- Buffer free
+- Binder object passing
+- Refcount command handling
+- Callback transaction
+- Callback reply
+
+Not yet confirmed:
+
+- `hwbinder`
+- `vndbinder`
+- Binder service manager compatibility
+- AOSP `servicemanager`
+- Android `libbinder` userspace
+- Death notifications
+- File descriptor transfer
+- Stress testing
+- Multiple clients
+- Multiple exported objects
+- Handle reuse/lifetime cleanup
+- Real Android-native daemons
+
+---
+
+## Suggested next milestones
+
+1. Split `binder_ping` into clearer subcommands:
+   - `ping-server`
+   - `ping-client`
+   - `object-server`
+   - `object-client`
+   - `callback-server`
+   - `callback-client`
+   - `stress`
+
+2. Add automated exit conditions so servers can terminate after one transaction.
+
+3. Add a stress mode:
+   - repeated transactions
+   - repeated object exports
+   - repeated callbacks
+   - forked clients
+
+4. Add Binder death notification tests:
+   - `BC_REQUEST_DEATH_NOTIFICATION`
+   - `BR_DEAD_BINDER`
+   - `BC_CLEAR_DEATH_NOTIFICATION`
+
+5. Test FD passing:
+   - `BINDER_TYPE_FD`
+
+6. Try a minimal AOSP-style Binder service manager experiment.
+
+7. Prototype a Binder-to-webOS Luna Bus bridge.
+
+---
+
+## Git workflow
+
+Recommended flow for milestones:
+
+```bash
+git status --short
+git add README.md scripts/build-module.sh scripts/build-ping.sh tools/binder_ping.c
+git commit -m "Describe milestone"
+git push origin HEAD:main
+```
+
+Avoid committing generated files unless intentionally publishing binaries:
+
+```text
+build/
+*.o
+*.ko
+```
+
+---
+
+## Troubleshooting
+
+### `/dev/binder` does not exist
+
+The module is not loaded, or the TV was rebooted.
+
+Load it again:
+
+```bash
+cd /tmp
+./load-binder-tv.sh /tmp/binder-dirty.ko
+```
+
+### `open /dev/binder: No such file or directory`
+
+Same as above: reload the module.
+
+### `scp: dest open "/tmp/binder_ping": Failure`
+
+The binary may be running or locked.
+
+```bash
+ssh root@TV_IP 'killall binder_ping 2>/dev/null || true; rm -f /tmp/binder_ping'
+scp build/binder_ping_static root@TV_IP:/tmp/binder_ping
+ssh root@TV_IP 'chmod +x /tmp/binder_ping'
+```
+
+### Kernel Oops during transaction
+
+Reboot before continuing.
+
+```bash
+ssh root@TV_IP 'sync; reboot'
+```
+
+Then verify that the module you load includes the `current_euid()` transaction fix.
+
+### Server log missing
+
+Use absolute paths under `/tmp` when redirecting logs from background processes.
+
+Example:
+
+```bash
+cd /tmp
+nohup ./binder_ping object-server > /tmp/binder_object_server.log 2>&1 &
+echo $! > /tmp/binder_object_server.pid
+```
+
+---
+
+## Disclaimer
+
+This is experimental kernel research code.
+
+Use at your own risk. It can crash the TV kernel. It is not intended for production use.
