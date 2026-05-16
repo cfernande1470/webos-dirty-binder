@@ -1002,6 +1002,11 @@ static int call_echo_handle(int fd, uint32_t handle)
 
 namespace android_lite {
 
+static size_t lite_parcel_align4(size_t n)
+{
+    return (n + 3U) & ~3U;
+}
+
 Parcel::Parcel()
     : size_(0)
 {
@@ -1027,6 +1032,58 @@ int Parcel::writeBytes(const void *data, size_t size)
 
     size_ += size;
     return 0;
+}
+
+int Parcel::writeInt32(int32_t value)
+{
+    return writeBytes(&value, sizeof(value));
+}
+
+int Parcel::writeString16Ascii(const char *str)
+{
+    int32_t len;
+    size_t bytes;
+    size_t padded;
+    size_t old_size;
+    size_t i;
+
+    if (!str)
+        str = "";
+
+    len = (int32_t)strlen(str);
+    bytes = ((size_t)len + 1U) * 2U;
+    padded = lite_parcel_align4(bytes);
+
+    if (writeInt32(len) != 0)
+        return -1;
+
+    old_size = size_;
+
+    if (size_ + padded > kCapacity)
+        return -1;
+
+    memset(data_ + size_, 0, padded);
+
+    for (i = 0; i < (size_t)len; i++) {
+        data_[old_size + i * 2U] = (unsigned char)str[i];
+        data_[old_size + i * 2U + 1U] = 0;
+    }
+
+    size_ += padded;
+    return 0;
+}
+
+int Parcel::writeInterfaceToken(const char *descriptor)
+{
+    /*
+     * Classic native Binder shape:
+     *   int32 strict_policy
+     *   String16 descriptor
+     */
+    if (writeInt32(0) != 0)
+        return -1;
+
+    return writeString16Ascii(descriptor);
 }
 
 int Parcel::writeCString(const char *str)

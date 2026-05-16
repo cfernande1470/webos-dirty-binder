@@ -15,6 +15,8 @@
 
 #include <linux/android/binder.h>
 
+#include "android_like_echo_iface.hpp"
+
 #define BINDER_DEVICE "/dev/binder"
 #define BINDER_MMAP_SIZE (1024 * 1024)
 
@@ -25,8 +27,6 @@
 
 #define AOSP_SM_DESCRIPTOR "android.os.IServiceManager"
 #define AOSP_SM_ADD_SERVICE_TRANSACTION 3U
-#define ANDROID_LIKE_ECHO_DESCRIPTOR "webos.dirtybinder.IEchoService"
-#define ANDROID_LIKE_TRANSACTION_ECHO_TEXT 1U
 
 struct sc_text_reply {
     uint32_t magic;
@@ -39,10 +39,10 @@ static const binder_uintptr_t kLocalBinderPtr =
 static const binder_uintptr_t kLocalBinderCookie =
     (binder_uintptr_t)0x4543484f53455256ULL; /* ECHOSERV */
 
-class BnEchoService {
+class AndroidLikeEchoService : public BnEchoService {
 public:
-    explicit BnEchoService(const char *name)
-        : name_(name ? name : "test.aidl.service")
+    explicit AndroidLikeEchoService(const char *name)
+        : name_(name ? name : "test.android.service")
     {
     }
 
@@ -51,17 +51,14 @@ public:
         return name_;
     }
 
-    int onEcho(const void *data, size_t size, char *out, size_t out_len)
+    int echoText(const char *message, char *out, size_t out_len) override
     {
-        const char *msg = data ? (const char *)data : "";
-
-        printf("AIDL-lite service request payload: %.*s\n",
-               (int)size,
-               msg);
+        printf("Android-like service echoText message=%s\n",
+               message ? message : "");
 
         snprintf(out,
                  out_len,
-                 "AIDL-lite service reply from webOS sidecar");
+                 "Android-like service reply from webOS sidecar");
 
         return 0;
     }
@@ -69,6 +66,8 @@ public:
 private:
     const char *name_;
 };
+
+
 
 static void die(const char *msg)
 {
@@ -323,7 +322,7 @@ static int aosp_add_local_service(int fd, const char *name)
     struct binder_transaction_data tr;
     int first = 1;
 
-    printf("AIDL-lite service addService name=%s local_ptr=0x%llx cookie=0x%llx\n",
+    printf("Android-like service addService name=%s local_ptr=0x%llx cookie=0x%llx\n",
            name,
            (unsigned long long)kLocalBinderPtr,
            (unsigned long long)kLocalBinderCookie);
@@ -380,7 +379,7 @@ static int aosp_add_local_service(int fd, const char *name)
                                   (size_t)(p - writebuf),
                                   readbuf,
                                   sizeof(readbuf),
-                                  "AIDL-lite addService call");
+                                  "Android-like addService call");
             first = 0;
         } else {
             n = binder_write_read(fd,
@@ -388,7 +387,7 @@ static int aosp_add_local_service(int fd, const char *name)
                                   0,
                                   readbuf,
                                   sizeof(readbuf),
-                                  "AIDL-lite addService wait");
+                                  "Android-like addService wait");
         }
 
         if (n < 0)
@@ -403,7 +402,7 @@ static int aosp_add_local_service(int fd, const char *name)
             memcpy(&rcmd, ptr, sizeof(rcmd));
             ptr += sizeof(rcmd);
 
-            printf("AIDL-lite addService got %s 0x%08x\n", cmd_name(rcmd), rcmd);
+            printf("Android-like addService got %s 0x%08x\n", cmd_name(rcmd), rcmd);
 
             if (rcmd == BR_REPLY) {
                 struct binder_transaction_data reply;
@@ -425,7 +424,7 @@ static int aosp_add_local_service(int fd, const char *name)
                 if (reply.data.ptr.buffer)
                     binder_free_buffer(fd, reply.data.ptr.buffer);
 
-                printf("AIDL-lite addService reply status=%d\n", status);
+                printf("Android-like addService reply status=%d\n", status);
                 return status == 0 ? 0 : 1;
             }
 
@@ -436,17 +435,17 @@ static int aosp_add_local_service(int fd, const char *name)
                 rcmd == BR_ACQUIRE ||
                 rcmd == BR_RELEASE ||
                 rcmd == BR_DECREFS) {
-                if (handle_ref_cmd(fd, rcmd, &ptr, end, "AIDL-lite addService") != 0)
+                if (handle_ref_cmd(fd, rcmd, &ptr, end, "Android-like addService") != 0)
                     return -1;
                 continue;
             }
 
             if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY) {
-                fprintf(stderr, "AIDL-lite addService failed cmd=0x%08x\n", rcmd);
+                fprintf(stderr, "Android-like addService failed cmd=0x%08x\n", rcmd);
                 return 1;
             }
 
-            fprintf(stderr, "AIDL-lite addService unhandled cmd=0x%08x\n", rcmd);
+            fprintf(stderr, "Android-like addService unhandled cmd=0x%08x\n", rcmd);
             return -1;
         }
     }
@@ -541,47 +540,13 @@ static int aidl_like_read_string16_ascii(struct aidl_like_parcel_view *v,
     return 0;
 }
 
-static int aidl_like_parse_echo_request(const void *data,
-                                        size_t size,
-                                        const char **message_out,
-                                        char *descriptor,
-                                        size_t descriptor_len)
-{
-    struct aidl_like_parcel_view v;
-    int32_t strict_policy;
-
-    if (!data || !message_out || !descriptor || descriptor_len == 0)
-        return -1;
-
-    *message_out = "";
-
-    v.data = (const uint8_t *)data;
-    v.size = size;
-    v.pos = 0;
-
-    if (aidl_like_read_i32(&v, &strict_policy) != 0)
-        return -1;
-
-    if (aidl_like_read_string16_ascii(&v, descriptor, descriptor_len) != 0)
-        return -1;
-
-    if (strcmp(descriptor, ANDROID_LIKE_ECHO_DESCRIPTOR) != 0)
-        return -1;
-
-    if (v.pos >= v.size)
-        return -1;
-
-    *message_out = (const char *)(v.data + v.pos);
-    return 0;
-}
-
 static int process_transaction(int fd,
-                               BnEchoService &service,
+                               AndroidLikeEchoService &service,
                                struct binder_transaction_data *tr)
 {
     char out[PAYLOAD_LEN];
 
-    printf("AIDL-lite service BR_TRANSACTION code=0x%x sender_pid=%d sender_euid=%u data_size=%llu\n",
+    printf("Android-like service BR_TRANSACTION code=0x%x sender_pid=%d sender_euid=%u data_size=%llu\n",
            tr->code,
            tr->sender_pid,
            tr->sender_euid,
@@ -590,76 +555,57 @@ static int process_transaction(int fd,
     if (tr->code == SC_CODE_PING) {
         return send_text_reply(fd,
                                tr->data.ptr.buffer,
-                               "PONG from AIDL-lite service",
+                               "PONG from Android-like service",
                                0,
-                               "AIDL-lite ping reply");
+                               "Android-like ping reply");
     }
 
     if (tr->code == ANDROID_LIKE_TRANSACTION_ECHO_TEXT) {
-        const char *msg = NULL;
-        char descriptor[128];
-
-        if (aidl_like_parse_echo_request((void *)(uintptr_t)tr->data.ptr.buffer,
-                                         (size_t)tr->data_size,
-                                         &msg,
-                                         descriptor,
-                                         sizeof(descriptor)) != 0) {
+        if (service.handleTransaction(tr->code,
+                                      (void *)(uintptr_t)tr->data.ptr.buffer,
+                                      (size_t)tr->data_size,
+                                      out,
+                                      sizeof(out)) != 0) {
             return send_text_reply(fd,
                                    tr->data.ptr.buffer,
-                                   "AIDL-like bad interface token",
+                                   "Android-like BnEchoService transaction failed",
                                    1,
-                                   "AIDL-like echo bad-token reply");
-        }
-
-        printf("AIDL-like service descriptor=%s message=%s\n",
-               descriptor,
-               msg ? msg : "");
-
-        if (service.onEcho(msg,
-                           msg ? strlen(msg) + 1U : 0,
-                           out,
-                           sizeof(out)) != 0) {
-            return send_text_reply(fd,
-                                   tr->data.ptr.buffer,
-                                   "AIDL-like echo failed",
-                                   1,
-                                   "AIDL-like echo error reply");
+                                   "Android-like BnEchoService error reply");
         }
 
         return send_text_reply(fd,
                                tr->data.ptr.buffer,
                                out,
                                0,
-                               "AIDL-like echo reply");
+                               "Android-like BnEchoService reply");
     }
 
     if (tr->code == SC_CODE_ECHO) {
-        if (service.onEcho((void *)(uintptr_t)tr->data.ptr.buffer,
-                           (size_t)tr->data_size,
-                           out,
-                           sizeof(out)) != 0) {
+        const char *msg = (const char *)(uintptr_t)tr->data.ptr.buffer;
+
+        if (service.echoText(msg ? msg : "", out, sizeof(out)) != 0) {
             return send_text_reply(fd,
                                    tr->data.ptr.buffer,
-                                   "AIDL-lite echo failed",
+                                   "Android-like echo failed",
                                    1,
-                                   "AIDL-lite echo error reply");
+                                   "Android-like echo error reply");
         }
 
         return send_text_reply(fd,
                                tr->data.ptr.buffer,
                                out,
                                0,
-                               "AIDL-lite echo reply");
+                               "Android-like echo reply");
     }
 
     return send_text_reply(fd,
                            tr->data.ptr.buffer,
-                           "AIDL-lite unknown transaction",
+                           "Android-like unknown transaction",
                            1,
-                           "AIDL-lite unknown reply");
+                           "Android-like unknown reply");
 }
 
-static int join_thread_pool(int fd, BnEchoService &service)
+static int join_thread_pool(int fd, AndroidLikeEchoService &service)
 {
     uint8_t writebuf[64];
     uint8_t readbuf[8192];
@@ -669,7 +615,7 @@ static int join_thread_pool(int fd, BnEchoService &service)
 
     append_u32(&p, cmd);
 
-    printf("AIDL-lite service enter looper\n");
+    printf("Android-like service enter looper\n");
 
     for (;;) {
         int n;
@@ -682,7 +628,7 @@ static int join_thread_pool(int fd, BnEchoService &service)
                                   (size_t)(p - writebuf),
                                   readbuf,
                                   sizeof(readbuf),
-                                  "AIDL-lite service enter looper");
+                                  "Android-like service enter looper");
             first = 0;
         } else {
             n = binder_write_read(fd,
@@ -690,7 +636,7 @@ static int join_thread_pool(int fd, BnEchoService &service)
                                   0,
                                   readbuf,
                                   sizeof(readbuf),
-                                  "AIDL-lite service loop");
+                                  "Android-like service loop");
         }
 
         if (n < 0)
@@ -705,7 +651,7 @@ static int join_thread_pool(int fd, BnEchoService &service)
             memcpy(&rcmd, ptr, sizeof(rcmd));
             ptr += sizeof(rcmd);
 
-            printf("AIDL-lite service got %s 0x%08x\n", cmd_name(rcmd), rcmd);
+            printf("Android-like service got %s 0x%08x\n", cmd_name(rcmd), rcmd);
 
             if (rcmd == BR_NOOP || rcmd == BR_TRANSACTION_COMPLETE || rcmd == BR_SPAWN_LOOPER)
                 continue;
@@ -729,17 +675,17 @@ static int join_thread_pool(int fd, BnEchoService &service)
                 rcmd == BR_ACQUIRE ||
                 rcmd == BR_RELEASE ||
                 rcmd == BR_DECREFS) {
-                if (handle_ref_cmd(fd, rcmd, &ptr, end, "AIDL-lite service") != 0)
+                if (handle_ref_cmd(fd, rcmd, &ptr, end, "Android-like service") != 0)
                     return -1;
                 continue;
             }
 
             if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY) {
-                fprintf(stderr, "AIDL-lite service failed cmd=0x%08x\n", rcmd);
+                fprintf(stderr, "Android-like service failed cmd=0x%08x\n", rcmd);
                 return 1;
             }
 
-            fprintf(stderr, "AIDL-lite service unhandled cmd=0x%08x\n", rcmd);
+            fprintf(stderr, "Android-like service unhandled cmd=0x%08x\n", rcmd);
             return -1;
         }
     }
@@ -747,19 +693,23 @@ static int join_thread_pool(int fd, BnEchoService &service)
 
 int main(int argc, char **argv)
 {
-    const char *name = argc >= 2 ? argv[1] : "test.aidl.service";
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+
+    const char *name = argc >= 2 ? argv[1] : "test.android.service";
     int fd;
-    BnEchoService service(name);
+    AndroidLikeEchoService service(name);
 
     fd = binder_open_and_init();
 
     if (aosp_add_local_service(fd, service.name()) != 0) {
-        fprintf(stderr, "AIDL-lite service failed to register %s\n", service.name());
+        fprintf(stderr, "Android-like service failed to register %s\n", service.name());
         return 1;
     }
 
-    printf("AIDL_LITE_SERVICE_REGISTERED name=%s\n", service.name());
-    printf("AIDL_LITE_SERVICE_OK\n");
+    printf("ANDROID_LIKE_SERVICE_REGISTERED name=%s\n", service.name());
+    printf("ANDROID_LIKE_SERVICE_OK\n");
+    printf("ANDROID_LIKE_BN_SERVICE_OK\n");
 
     return join_thread_pool(fd, service);
 }

@@ -12,7 +12,10 @@ public:
 
     void reset();
     int writeBytes(const void *data, size_t size);
+    int writeInt32(int32_t value);
     int writeCString(const char *str);
+    int writeString16Ascii(const char *str);
+    int writeInterfaceToken(const char *descriptor);
 
     const void *data() const;
     size_t size() const;
