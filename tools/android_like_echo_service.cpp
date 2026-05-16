@@ -39,9 +39,9 @@ static const binder_uintptr_t kLocalBinderPtr =
 static const binder_uintptr_t kLocalBinderCookie =
     (binder_uintptr_t)0x4543484f53455256ULL; /* ECHOSERV */
 
-class BnEchoService {
+class AndroidLikeEchoService : public BnEchoService {
 public:
-    explicit BnEchoService(const char *name)
+    explicit AndroidLikeEchoService(const char *name)
         : name_(name ? name : "test.android.service")
     {
     }
@@ -51,13 +51,10 @@ public:
         return name_;
     }
 
-    int onEcho(const void *data, size_t size, char *out, size_t out_len)
+    int echoText(const char *message, char *out, size_t out_len) override
     {
-        const char *msg = data ? (const char *)data : "";
-
-        printf("Android-like service request payload: %.*s\n",
-               (int)size,
-               msg);
+        printf("Android-like service echoText message=%s\n",
+               message ? message : "");
 
         snprintf(out,
                  out_len,
@@ -69,6 +66,8 @@ public:
 private:
     const char *name_;
 };
+
+
 
 static void die(const char *msg)
 {
@@ -576,7 +575,7 @@ static int aidl_like_parse_echo_request(const void *data,
 }
 
 static int process_transaction(int fd,
-                               BnEchoService &service,
+                               AndroidLikeEchoService &service,
                                struct binder_transaction_data *tr)
 {
     char out[PAYLOAD_LEN];
@@ -596,48 +595,29 @@ static int process_transaction(int fd,
     }
 
     if (tr->code == ANDROID_LIKE_TRANSACTION_ECHO_TEXT) {
-        const char *msg = NULL;
-        char descriptor[128];
-
-        if (aidl_like_parse_echo_request((void *)(uintptr_t)tr->data.ptr.buffer,
-                                         (size_t)tr->data_size,
-                                         &msg,
-                                         descriptor,
-                                         sizeof(descriptor)) != 0) {
+        if (service.handleTransaction(tr->code,
+                                      (void *)(uintptr_t)tr->data.ptr.buffer,
+                                      (size_t)tr->data_size,
+                                      out,
+                                      sizeof(out)) != 0) {
             return send_text_reply(fd,
                                    tr->data.ptr.buffer,
-                                   "Android-like bad interface token",
+                                   "Android-like BnEchoService transaction failed",
                                    1,
-                                   "Android-like echo bad-token reply");
-        }
-
-        printf("Android-like service descriptor=%s message=%s\n",
-               descriptor,
-               msg ? msg : "");
-
-        if (service.onEcho(msg,
-                           msg ? strlen(msg) + 1U : 0,
-                           out,
-                           sizeof(out)) != 0) {
-            return send_text_reply(fd,
-                                   tr->data.ptr.buffer,
-                                   "Android-like echo failed",
-                                   1,
-                                   "Android-like echo error reply");
+                                   "Android-like BnEchoService error reply");
         }
 
         return send_text_reply(fd,
                                tr->data.ptr.buffer,
                                out,
                                0,
-                               "Android-like echo reply");
+                               "Android-like BnEchoService reply");
     }
 
     if (tr->code == SC_CODE_ECHO) {
-        if (service.onEcho((void *)(uintptr_t)tr->data.ptr.buffer,
-                           (size_t)tr->data_size,
-                           out,
-                           sizeof(out)) != 0) {
+        const char *msg = (const char *)(uintptr_t)tr->data.ptr.buffer;
+
+        if (service.echoText(msg ? msg : "", out, sizeof(out)) != 0) {
             return send_text_reply(fd,
                                    tr->data.ptr.buffer,
                                    "Android-like echo failed",
@@ -659,7 +639,7 @@ static int process_transaction(int fd,
                            "Android-like unknown reply");
 }
 
-static int join_thread_pool(int fd, BnEchoService &service)
+static int join_thread_pool(int fd, AndroidLikeEchoService &service)
 {
     uint8_t writebuf[64];
     uint8_t readbuf[8192];
@@ -752,7 +732,7 @@ int main(int argc, char **argv)
 
     const char *name = argc >= 2 ? argv[1] : "test.android.service";
     int fd;
-    BnEchoService service(name);
+    AndroidLikeEchoService service(name);
 
     fd = binder_open_and_init();
 
@@ -763,6 +743,7 @@ int main(int argc, char **argv)
 
     printf("ANDROID_LIKE_SERVICE_REGISTERED name=%s\n", service.name());
     printf("ANDROID_LIKE_SERVICE_OK\n");
+    printf("ANDROID_LIKE_BN_SERVICE_OK\n");
 
     return join_thread_pool(fd, service);
 }

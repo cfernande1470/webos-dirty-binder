@@ -72,7 +72,7 @@ if [ "$client_rc" -ne 0 ]; then
 fi
 
 grep -q 'ANDROID_LIKE_INTERFACE_CONTRACT_OK' logs/android_like_service_client.log
-grep -q 'ANDROID_LIKE_AIDL_WIRE_OK' logs/android_like_client.log
+grep -q 'ANDROID_LIKE_AIDL_WIRE_OK' logs/android_like_service_client.log
 grep -q 'ANDROID_LIKE_API_CLIENT_OK' logs/android_like_service_client.log
 
 echo "== Android-like service log markers =="
@@ -80,6 +80,8 @@ cat logs/android_like_service_server.log || true
 
 grep -q 'ANDROID_LIKE_SERVICE_REGISTERED' logs/android_like_service_server.log
 grep -q 'ANDROID_LIKE_SERVICE_OK' logs/android_like_service_server.log
+grep -q 'ANDROID_LIKE_BN_SERVICE_OK' logs/android_like_service_server.log
+grep -q 'ANDROID_LIKE_BN_ECHO_TRANSACTION_OK' logs/android_like_service_server.log
 
 echo "ANDROID_LIKE_SERVICE_SMOKE_OK"
 TVSH
