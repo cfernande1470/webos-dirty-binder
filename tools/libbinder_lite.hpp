@@ -70,6 +70,20 @@ private:
 
 ServiceManagerProxy defaultServiceManager(BinderDriver &driver);
 
+
+class BpEchoService {
+public:
+    explicit BpEchoService(const BpBinder &binder);
+
+    bool valid() const;
+    int echo(const char *message, Parcel *reply) const;
+    int echoText(const char *message, char *out, size_t out_len) const;
+
+private:
+    BpBinder binder_;
+};
+
+
 }  // namespace android_lite
 
 #endif  // WEBOS_DIRTY_BINDER_LIBBINDER_LITE_HPP

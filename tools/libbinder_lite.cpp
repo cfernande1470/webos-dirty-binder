@@ -1311,4 +1311,57 @@ ServiceManagerProxy defaultServiceManager(BinderDriver &driver)
     return ServiceManagerProxy(driver);
 }
 
+BpEchoService::BpEchoService(const BpBinder &binder)
+    : binder_(binder)
+{
+}
+
+bool BpEchoService::valid() const
+{
+    return binder_.valid();
+}
+
+int BpEchoService::echo(const char *message, Parcel *reply) const
+{
+    Parcel data;
+
+    if (!valid()) {
+        fprintf(stderr, "AIDL-lite BpEchoService invalid binder\n");
+        return 1;
+    }
+
+    if (data.writeCString(message ? message : "") != 0)
+        return -1;
+
+    return binder_.transact(SC_CODE_ECHO, data, reply);
+}
+
+int BpEchoService::echoText(const char *message, char *out, size_t out_len) const
+{
+    Parcel reply;
+    uint32_t status = 0xffffffffU;
+    const char *text = NULL;
+
+    if (out && out_len)
+        out[0] = '\0';
+
+    if (echo(message, &reply) != 0)
+        return 1;
+
+    if (reply.readSidecarTextReply(&status, &text) != 0)
+        return -1;
+
+    printf("AIDL-lite echo reply status=%u text=%s\n",
+           status,
+           text ? text : "(null)");
+
+    if (status != 0)
+        return 1;
+
+    if (out && out_len)
+        snprintf(out, out_len, "%s", text ? text : "");
+
+    return 0;
+}
+
 }  // namespace android_lite
