@@ -106,6 +106,41 @@ printf '' > .scmversion
 ./scripts/config --module CONFIG_ANDROID_BINDER_IPC
 ./scripts/config --set-str CONFIG_ANDROID_BINDER_DEVICES "binder,hwbinder,vndbinder"
 
+
+# webos-dirty-binder: task_euid current_euid transaction fix
+python3 - <<'PY_TASK_EUID_FIX'
+from pathlib import Path
+
+p = Path("drivers/android/binder.c")
+s = p.read_text()
+
+old = "t->sender_euid = task_euid(proc->tsk);"
+new = """/*
+         * webOS dirty binder:
+         * Avoid task_euid(proc->tsk) on LG webOS kernel.
+         *
+         * On this LG webOS 4.4.84 target, task_euid(proc->tsk)
+         * NULL-dereferences during BC_TRANSACTION. For this PoC,
+         * current_euid() keeps sender_euid meaningful for the task
+         * issuing the ioctl and allows real Binder transactions.
+         */
+        t->sender_euid = current_euid();"""
+
+if old in s:
+    s = s.replace(old, new, 1)
+    p.write_text(s)
+    print("patched binder.c: task_euid(proc->tsk) -> current_euid()")
+elif "t->sender_euid = current_euid();" in s:
+    print("binder.c already has current_euid() sender_euid fix")
+else:
+    print("ERROR: could not find sender_euid task_euid line")
+    for i, line in enumerate(s.splitlines(), 1):
+        if "sender_euid" in line or "task_euid" in line or "current_euid" in line:
+            print(f"{i}: {line}")
+    raise SystemExit(1)
+PY_TASK_EUID_FIX
+
+
 make ARCH=arm64 HOSTCFLAGS="-fcommon" olddefconfig
 
 echo "=== preparing kernel build files ==="
