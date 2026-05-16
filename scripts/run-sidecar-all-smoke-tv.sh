@@ -35,4 +35,7 @@ echo "== sidecar duplicate registration smoke =="
 echo "== AOSP ServiceManager compatibility smoke =="
 ./scripts/run-aosp-sm-compat-smoke-tv.sh
 
+echo "== libbinder-lite client smoke =="
+./scripts/run-libbinder-lite-client-smoke-tv.sh
+
 echo "ALL_SIDECAR_SMOKE_OK"
