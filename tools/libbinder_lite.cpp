@@ -1175,6 +1175,27 @@ uint32_t BpBinder::handle() const
     return handle_;
 }
 
+
+int BpBinder::releaseHandle() const
+{
+    if (fd_ < 0 || handle_ == 0) {
+        fprintf(stderr,
+                "libbinder-lite BC_RELEASE invalid binder fd=%d handle=%u\n",
+                fd_,
+                handle_);
+        return -1;
+    }
+
+    if (binder_send_handle_cmd(fd_,
+                               BC_RELEASE,
+                               handle_,
+                               "libbinder-lite BC_RELEASE handle") != 0)
+        return -1;
+
+    printf("ANDROID_LIKE_HANDLE_RELEASE_OK handle=%u\n", handle_);
+    return 0;
+}
+
 int BpBinder::transact(uint32_t code, const Parcel &data, Parcel *reply) const
 {
     uint8_t writebuf[1024];

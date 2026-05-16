@@ -44,4 +44,7 @@ echo "== Android-like API smoke =="
 echo "== Android-like service smoke =="
 ./scripts/run-android-like-service-smoke-tv.sh
 
+echo "== Android-like lifecycle smoke =="
+./scripts/run-android-like-lifecycle-smoke-tv.sh
+
 echo "ALL_SIDECAR_SMOKE_OK"

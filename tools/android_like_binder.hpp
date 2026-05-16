@@ -110,7 +110,8 @@ public:
         return binder_.handle();
     }
 
-    int transact(uint32_t code, const Parcel &data, Parcel *reply) const {
+        int releaseHandle() const { return binder_.releaseHandle(); }
+int transact(uint32_t code, const Parcel &data, Parcel *reply) const {
         return binder_.transact(code,
                                 data.lite(),
                                 reply ? &reply->lite() : NULL);

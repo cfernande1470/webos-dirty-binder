@@ -88,6 +88,11 @@ echo "== build android_like_echo_client =="
 file build/android_like_echo_client_static
 ls -lh build/android_like_echo_client_static
 
+echo "== build android_like_lifecycle_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools   -o build/android_like_lifecycle_client_static   tools/libbinder_lite.cpp tools/android_like_lifecycle_client.cpp
+file build/android_like_lifecycle_client_static
+ls -lh build/android_like_lifecycle_client_static
+
 echo "== build android_like_echo_service =="
 "$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_echo_service_static tools/android_like_echo_service.cpp
 file build/android_like_echo_service_static

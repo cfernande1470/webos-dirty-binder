@@ -134,6 +134,7 @@ class IEchoService {
 public:
     virtual ~IEchoService() {}
     virtual int echoText(const char *message, char *out, size_t out_len) = 0;
+    virtual int releaseRemote() { return 0; }
 };
 
 class BpEchoService : public IEchoService {
@@ -180,6 +181,16 @@ public:
             snprintf(out, out_len, "%s", text ? text : "");
 
         return 0;
+    }
+
+    int releaseRemote() override
+    {
+        if (!remote_) {
+            fprintf(stderr, "Android-like BpEchoService releaseRemote invalid remote\n");
+            return -1;
+        }
+
+        return remote_->releaseHandle();
     }
 
 private:

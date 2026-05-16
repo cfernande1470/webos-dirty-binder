@@ -52,6 +52,7 @@ public:
 
     int transact(uint32_t code, const Parcel &data, Parcel *reply) const;
     int transactEcho() const;
+    int releaseHandle() const;
 
 private:
     int fd_;
