@@ -110,3 +110,10 @@ echo "== Android-like AIDL callback listener smoke =="
 ./scripts/run-android-like-aidl-callback-listener-tv.sh
 
 echo "AIDL_LIKE_CALLBACK_LISTENER_V0_OK"
+
+
+echo "== Android-like AIDL callback listener death smoke =="
+
+./scripts/run-android-like-aidl-callback-listener-death-tv.sh
+
+echo "AIDL_LIKE_CALLBACK_LISTENER_DEATH_V0_OK"

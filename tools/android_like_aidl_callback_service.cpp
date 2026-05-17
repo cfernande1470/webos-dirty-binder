@@ -15,6 +15,68 @@ static const binder_uintptr_t kAidlCallbackServicePtr =
 static const binder_uintptr_t kAidlCallbackServiceCookie =
     (binder_uintptr_t)0x4149444c43423030ULL; /* AIDLCB00 */
 
+static int g_listener_death_mode = 0;
+static uint32_t g_listener_death_handle = 0;
+static const binder_uintptr_t kAidlCallbackListenerDeathCookie =
+    (binder_uintptr_t)0x4c53544e44454144ULL; /* LSTNDEAD */
+
+
+#ifndef BR_DEAD_BINDER
+#define BR_DEAD_BINDER _IOR('r', 15, binder_uintptr_t)
+#endif
+
+#ifndef BC_REQUEST_DEATH_NOTIFICATION
+#define BC_REQUEST_DEATH_NOTIFICATION _IOW('c', 14, struct binder_handle_cookie)
+#endif
+
+#ifndef BC_DEAD_BINDER_DONE
+#define BC_DEAD_BINDER_DONE _IOW('c', 16, binder_uintptr_t)
+#endif
+
+static int request_listener_death_notification(int fd, uint32_t handle, binder_uintptr_t cookie) {
+    uint8_t writebuf[128];
+    uint8_t *p = writebuf;
+    uint32_t cmd = BC_REQUEST_DEATH_NOTIFICATION;
+    struct binder_handle_cookie hc;
+
+    memset(&hc, 0, sizeof(hc));
+    hc.handle = handle;
+    hc.cookie = cookie;
+
+    cb_append_u32(&p, cmd);
+    cb_append_bytes(&p, &hc, sizeof(hc));
+
+    printf("aidl-callback service: request listener death handle=%u cookie=0x%" PRIx64 "\n",
+           handle,
+           (uint64_t)cookie);
+
+    return cb_binder_write_read(fd,
+                                writebuf,
+                                (size_t)(p - writebuf),
+                                NULL,
+                                0,
+                                "aidl-callback service request listener death") < 0 ? -1 : 0;
+}
+
+static int send_dead_binder_done(int fd, binder_uintptr_t cookie) {
+    uint8_t writebuf[64];
+    uint8_t *p = writebuf;
+    uint32_t cmd = BC_DEAD_BINDER_DONE;
+
+    cb_append_u32(&p, cmd);
+    cb_append_bytes(&p, &cookie, sizeof(cookie));
+
+    printf("aidl-callback service: BC_DEAD_BINDER_DONE cookie=0x%" PRIx64 "\n",
+           (uint64_t)cookie);
+
+    return cb_binder_write_read(fd,
+                                writebuf,
+                                (size_t)(p - writebuf),
+                                NULL,
+                                0,
+                                "aidl-callback service dead binder done") < 0 ? -1 : 0;
+}
+
 static int write_token(uint8_t *buf, size_t cap, size_t *pos, const char *descriptor) {
     if (cb_parcel_write_i32(buf, cap, pos, 0) != 0)
         return -1;
@@ -234,6 +296,20 @@ static int process_register_listener(int fd, struct binder_transaction_data *tr)
     if (cb_binder_acquire_handle(fd, listener_handle, "aidl-callback service acquire listener") != 0)
         return -1;
 
+    if (g_listener_death_mode) {
+        if (request_listener_death_notification(fd,
+                                                listener_handle,
+                                                kAidlCallbackListenerDeathCookie) != 0) {
+            cb_binder_release_handle(fd, listener_handle, "aidl-callback service release listener after death request failed");
+            return -1;
+        }
+
+        g_listener_death_handle = listener_handle;
+
+        printf("AIDL_LIKE_CALLBACK_LISTENER_DEATH_REQUESTED\n");
+        fflush(stdout);
+    }
+
     if (call_listener_on_event(fd, listener_handle, event_text, &ack) != 0) {
         cb_binder_release_handle(fd, listener_handle, "aidl-callback service release listener after failed call");
         return -1;
@@ -250,8 +326,14 @@ static int process_register_listener(int fd, struct binder_transaction_data *tr)
     printf("AIDL_LIKE_CALLBACK_LISTENER_REPLY_OK\n");
     fflush(stdout);
 
-    if (cb_binder_release_handle(fd, listener_handle, "aidl-callback service release listener") != 0)
-        return -1;
+    if (g_listener_death_mode) {
+        printf("aidl-callback service: keeping listener handle=%u for death notification\n",
+               listener_handle);
+        fflush(stdout);
+    } else {
+        if (cb_binder_release_handle(fd, listener_handle, "aidl-callback service release listener") != 0)
+            return -1;
+    }
 
     if (tr->flags & TF_ONE_WAY) {
         if (cb_binder_free_buffer(fd,
@@ -361,6 +443,36 @@ static int service_loop(int fd) {
                 continue;
             }
 
+            if (rcmd == BR_DEAD_BINDER) {
+                binder_uintptr_t cookie = 0;
+
+                if (ptr + sizeof(cookie) > end)
+                    return -1;
+
+                memcpy(&cookie, ptr, sizeof(cookie));
+                ptr += sizeof(cookie);
+
+                printf("aidl-callback service: BR_DEAD_BINDER cookie=0x%" PRIx64 "\n",
+                       (uint64_t)cookie);
+
+                if (send_dead_binder_done(fd, cookie) != 0)
+                    return -1;
+
+                if (cookie == kAidlCallbackListenerDeathCookie) {
+                    printf("AIDL_LIKE_CALLBACK_LISTENER_DEATH_OK\n");
+                    fflush(stdout);
+
+                    if (g_listener_death_handle) {
+                        cb_binder_release_handle(fd,
+                                                 g_listener_death_handle,
+                                                 "aidl-callback service release dead listener handle");
+                        g_listener_death_handle = 0;
+                    }
+                }
+
+                continue;
+            }
+
             if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY) {
                 fprintf(stderr, "aidl-callback service failed cmd=0x%08x\n", rcmd);
                 return 1;
@@ -378,6 +490,12 @@ int main(int argc, char **argv) {
 
     setvbuf(stdout, NULL, _IOLBF, 0);
     setvbuf(stderr, NULL, _IOLBF, 0);
+
+    if (argc > 2 && strcmp(argv[2], "--listener-death-mode") == 0) {
+        g_listener_death_mode = 1;
+        printf("AIDL_LIKE_CALLBACK_LISTENER_DEATH_MODE\n");
+        fflush(stdout);
+    }
 
     fd = cb_binder_open_and_init("aidl-callback service");
 
