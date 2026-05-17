@@ -65,6 +65,13 @@ echo "== Android-like callback smoke =="
 
 echo "BINDER_CALLBACK_V0_OK"
 
+echo "== Android-like callback stress smoke =="
+
+CLIENTS="${CLIENTS:-8}" ./scripts/run-android-like-callback-stress-tv.sh
+
+echo "BINDER_CALLBACK_STRESS_V0_OK"
+
+
 echo "BINDER_LIFECYCLE_V0_OK"
 echo "BINDER_DEATH_NOTIFICATION_V0_OK"
 echo "ALL_SIDECAR_SMOKE_OK"
