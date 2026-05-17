@@ -89,3 +89,10 @@ echo "== Android-like AIDL concurrent stress smoke =="
 CLIENTS="${CLIENTS:-16}" ROUNDS="${ROUNDS:-50}" ./scripts/run-android-like-aidl-stress-tv.sh
 
 echo "AIDL_LIKE_STRESS_V0_OK"
+
+
+echo "== Android-like AIDL service recovery smoke =="
+
+CYCLES="${CYCLES:-5}" ROUNDS="${ROUNDS:-10}" ./scripts/run-android-like-aidl-recovery-tv.sh
+
+echo "AIDL_LIKE_RECOVERY_V0_OK"
