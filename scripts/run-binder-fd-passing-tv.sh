@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "DIRECT_BINDER_FD_QUARANTINED"
+echo "Direct BINDER_TYPE_FD probes are disabled because they can freeze/reboot the TV."
+echo "Use scripts/run-fd-bridge-smoke-tv.sh instead."
+exit 99
+
+set -euo pipefail
+
 TV_IP="${TV_IP:-192.168.2.121}"
 SIDE_DIR="${SIDE_DIR:-/media/internal/android-sidecar}"
 SERVICE="${SERVICE:-test.android.fd}"
