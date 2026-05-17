@@ -103,3 +103,10 @@ echo "== Android-like AIDL stale handle recovery smoke =="
 CLIENT_SLEEP="${CLIENT_SLEEP:-8}" ./scripts/run-android-like-aidl-stale-handle-tv.sh
 
 echo "AIDL_LIKE_STALE_HANDLE_V0_OK"
+
+
+echo "== Android-like AIDL callback listener smoke =="
+
+./scripts/run-android-like-aidl-callback-listener-tv.sh
+
+echo "AIDL_LIKE_CALLBACK_LISTENER_V0_OK"
