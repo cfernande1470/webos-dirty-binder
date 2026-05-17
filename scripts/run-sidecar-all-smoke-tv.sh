@@ -187,3 +187,10 @@ echo "== Binder Android PING_TRANSACTION smoke =="
 ./scripts/run-binder-ping-transaction-tv.sh
 
 echo "BINDER_PING_TRANSACTION_V0_OK"
+
+
+echo "== Android-like AIDL one-way transaction smoke =="
+
+ROUNDS="${ROUNDS:-100}" ./scripts/run-android-like-aidl-oneway-tv.sh
+
+echo "AIDL_LIKE_ONEWAY_V0_OK"
