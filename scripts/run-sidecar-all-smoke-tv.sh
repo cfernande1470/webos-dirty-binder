@@ -138,3 +138,10 @@ echo "== Android-like AIDL negative/error semantics smoke =="
 ./scripts/run-android-like-aidl-negative-tv.sh
 
 echo "AIDL_LIKE_NEGATIVE_V0_OK"
+
+
+echo "== Binder meta transactions smoke =="
+
+./scripts/run-binder-meta-transactions-tv.sh
+
+echo "BINDER_META_TRANSACTIONS_V0_OK"

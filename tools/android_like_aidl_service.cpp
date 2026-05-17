@@ -6,6 +6,34 @@ static const binder_uintptr_t kAidlLikeServicePtr =
 static const binder_uintptr_t kAidlLikeServiceCookie =
     (binder_uintptr_t)0x4149444c30303030ULL; /* AIDL0000 */
 
+static int aidl_like_send_descriptor_reply(int fd, struct binder_transaction_data *tr) {
+    uint8_t reply[512];
+    size_t pos = 0;
+
+    /*
+     * Android's INTERFACE_TRANSACTION returns the descriptor string directly,
+     * not an AIDL method reply with an exception header.
+     */
+    if (cb_parcel_write_string16_ascii(reply,
+                                       sizeof(reply),
+                                       &pos,
+                                       AIDL_LIKE_DESCRIPTOR) != 0) {
+        fprintf(stderr, "aidl-like service: failed to build descriptor reply\n");
+        return -1;
+    }
+
+    printf("aidl-like service: INTERFACE_TRANSACTION descriptor=%s\n",
+           AIDL_LIKE_DESCRIPTOR);
+    printf("BINDER_META_INTERFACE_TRANSACTION_OK\n");
+    fflush(stdout);
+
+    return aidl_like_send_reply_parcel(fd,
+                                       tr->data.ptr.buffer,
+                                       reply,
+                                       pos,
+                                       "aidl-like interface descriptor reply");
+}
+
 static int aidl_like_process_echo(int fd, struct binder_transaction_data *tr, struct aidl_like_reader *r) {
     std::string msg;
     std::string out;
@@ -70,6 +98,9 @@ static int aidl_like_process_transaction(int fd, struct binder_transaction_data 
            (unsigned long long)tr->data_size,
            (unsigned long long)tr->offsets_size,
            tr->flags);
+
+    if (tr->code == AIDL_LIKE_INTERFACE_TRANSACTION)
+        return aidl_like_send_descriptor_reply(fd, tr);
 
     if (tr->code == AIDL_LIKE_PING) {
         printf("aidl-like service: handled PING\n");
@@ -190,6 +221,7 @@ int main(int argc, char **argv) {
         return 1;
 
     printf("AIDL_LIKE_SERVICE_REGISTERED\n");
+    printf("BINDER_META_SERVICE_REGISTERED\n");
     fflush(stdout);
 
     return aidl_like_service_loop(fd) == 0 ? 0 : 1;

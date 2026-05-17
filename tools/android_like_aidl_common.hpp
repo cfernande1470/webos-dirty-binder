@@ -10,6 +10,12 @@
 #define AIDL_LIKE_TX_ADD 2U
 #define AIDL_LIKE_PING 0x50494e47U
 
+/*
+ * Android IBinder meta transaction:
+ * INTERFACE_TRANSACTION = '_NTF' = 0x5f4e5446
+ */
+#define AIDL_LIKE_INTERFACE_TRANSACTION 0x5f4e5446U
+
 struct aidl_like_reader {
     const uint8_t *data;
     size_t size;
