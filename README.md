@@ -1,343 +1,265 @@
-# webOS Dirty Binder
+# webOS Dirty Binder Android Sidecar
 
-Android-like Binder sidecar for LG webOS TVs.
+> Experimental Android userspace sidecar for LG webOS TV, using a backported Binder kernel module, a ServiceManager shim, and a UNIX-domain FD bridge instead of direct `BINDER_TYPE_FD`.
 
-This project brings a controlled subset of Android Binder semantics to LG webOS by loading a custom Binder kernel module, running a minimal Android-like ServiceManager, and building progressively higher-level IPC/runtime compatibility pieces around it.
+## Project status
 
-The current direction is **not** to replace webOS. webOS remains the host operating system, compositor, driver stack, audio/video/input owner, and UI shell. Android runs as a sidecar userspace, staged on external USB storage, with Binder-compatible services and compatibility shims layered on top.
+Current state: **Android userspace sidecar proof-of-life is working.**
 
----
+The project has evolved from a Binder driver bring-up into a controlled Android sidecar architecture running on top of webOS, not replacing webOS. The TV remains the host operating system; Android components are mounted and executed from an external USB-backed rootfs.
 
-## Current status
-
-The project has moved beyond a basic Binder smoke test. The current working stack includes:
-
-- Custom Binder kernel module loaded on LG webOS.
-- `/dev/binder` exposed and usable.
-- Minimal ServiceManager-style registry.
-- Binder handles, local Binder objects, callbacks, death notifications, lifecycle tests, one-way calls, AIDL-like Parcel transactions, stress tests, listener registries, stale handle recovery, and Binder-return-object tests.
-- Direct Binder FD passing investigated and quarantined.
-- Safe FD passing implemented through `SCM_RIGHTS` side channel.
-- `ParcelFileDescriptor-lite` implemented on top of Binder token control + Unix socket FD transport.
-- Android-like process preflight from `/media/internal/android-rootfs` verified.
-- USB-backed Android rootfs staging added.
-- Waydroid/LineageOS ARM64 `system.img` and `vendor.img` downloaded/extracted to USB.
-- Synthetic Android rootfs created with `/system`, `/vendor`, `/apex`, `/dev`, `/proc`, `/sys`, `/data`, and `/cache`.
-- Android linker works inside chroot.
-- Android `/system/bin/toybox`, `/system/bin/sh`, and `getprop` execute inside the synthetic rootfs.
-
-Most recent successful milestone markers:
+The current working stack is:
 
 ```text
-FD_BRIDGE_SMOKE_TV_OK
-PARCELFD_LITE_SMOKE_TV_OK
-ANDROID_USERSPACE_PREFLIGHT_V1_TV_OK
-ANDROID_ROOTFS_BOOTSTRAP_V0_USB_DONE
-ANDROID_SYNTH_ROOTFS_V1_OK
-ANDROID_SYNTHETIC_ROOTFS_V1_DONE
+LG webOS TV host
+  ├─ stock webOS compositor, drivers, audio, input, network
+  ├─ custom/backported binder.ko
+  ├─ /dev/binder
+  ├─ mini_servicemgr compatibility shim
+  ├─ ParcelFD-lite over SCM_RIGHTS
+  └─ Android/Lineage userspace images mounted from USB
+       ├─ /system
+       ├─ /vendor
+       ├─ /apex
+       ├─ Android linker works
+       ├─ Android toybox/sh/getprop work
+       └─ /system/bin/service can see mini_servicemgr services
 ```
 
----
-
-## Big-picture architecture
+Latest confirmed milestones:
 
 ```text
-+-------------------------------------------------------------+
-| LG webOS host                                                |
-|                                                             |
-|  - real boot chain                                           |
-|  - compositor / window manager                               |
-|  - display, audio, input, remote, network                    |
-|  - proprietary LG services                                   |
-|                                                             |
-|  +----------------------+       +-------------------------+  |
-|  | custom binder.ko      |       | webOS app/window layer  |  |
-|  | /dev/binder           |       | future UI bridge        |  |
-|  +----------+-----------+       +-------------------------+  |
-|             |                                               |
-|             v                                               |
-|  +----------------------+                                    |
-|  | mini_servicemgr       |                                    |
-|  | Android-like registry |                                    |
-|  +----------+-----------+                                    |
-|             |                                               |
-|             v                                               |
-|  +----------------------+       +-------------------------+  |
-|  | Binder control plane  |<----->| Android sidecar clients |  |
-|  | handles/callbacks     |       | chroot/rootfs processes |  |
-|  +----------+-----------+       +-------------------------+  |
-|             |                                               |
-|             v                                               |
-|  +----------------------+                                    |
-|  | ParcelFD-lite         |                                    |
-|  | token over Binder     |                                    |
-|  | FD over SCM_RIGHTS    |                                    |
-|  +----------------------+                                    |
-|                                                             |
-+-------------------------------------------------------------+
-
-External USB:
-
-/media/internal/android-usb
-  android-rootfs
-  android-downloads
-  android-images
-  android-mounts
-  android-data
-  android-cache
+Direct BINDER_TYPE_FD path quarantined                         ✅
+SCM_RIGHTS FD Bridge v0                                       ✅
+ParcelFileDescriptor-lite v0                                  ✅
+Android userspace preflight v1                                ✅
+USB-backed Waydroid/Lineage system/vendor images              ✅
+Synthetic Android rootfs v1                                   ✅
+Modern Binder ioctl compatibility for Android servicemanager  ✅
+Android /system/bin/service sees mini_servicemgr services      ✅
 ```
 
-The strategy is:
+## What this is
+
+This project is an attempt to run selected Android userspace components on an LG webOS TV without flashing Android TV and without replacing webOS.
+
+The guiding idea is:
 
 ```text
-Binder = control plane
-SCM_RIGHTS = FD transport plane
-webOS = hardware/UI host
-Android = sidecar userspace
+webOS stays in charge of hardware and UI.
+Android runs as a sidecar userspace.
+Binder is provided by our sidecar kernel module.
+File descriptors are passed outside Binder using SCM_RIGHTS.
+A ServiceManager shim exposes Android-like service discovery.
 ```
 
----
+This is closer to a **Waydroid-style Android userspace sidecar** than to a traditional Android TV ROM. However, it is **not Waydroid proper**. We currently use Waydroid/Lineage images as a convenient source of ARM64 Android `system.img` and `vendor.img`, but we are not running the full Waydroid daemon/LXC stack.
 
-## Development environment
+## What this is not
 
-Typical development setup used so far:
+This is not:
 
 ```text
-NanoPi R3S:
-  repo path: ~/disk/webos-dirty-binder
-
-LG webOS TV:
-  ssh: root@192.168.2.121
-  sidecar path: /media/internal/android-sidecar
-  rootfs path: /media/internal/android-rootfs
-  USB mount: /media/internal/android-usb
+an Android TV ROM
+an attempt to flash/replace webOS
+a complete Waydroid port yet
+a complete Android boot
+a zygote/system_server/SurfaceFlinger launch yet
+a production-ready Android container
 ```
 
-The scripts usually accept:
-
-```bash
-TV_IP=192.168.2.121
-SIDE_DIR=/media/internal/android-sidecar
-ROOTFS=/media/internal/android-rootfs
-IMG_DIR=/media/internal/android-images
-MNT_DIR=/media/internal/android-mounts
-USB_DIR=/media/internal/android-usb
-```
-
----
-
-## Storage layout
-
-Internal TV storage is too small for a real Android rootfs/image workflow.
-
-Observed internal storage state:
+webOS remains essential because it owns:
 
 ```text
-/dev/root        1.2G   1.2G     0   100% /
-/dev/mmcblk0p56 2.7G   ~0.8G  ~1.9G /mnt/lg/appstore /media
+TV compositor/windowing
+display pipeline
+audio/video stack
+remote/input handling
+network integration
+vendor drivers
+power management
 ```
 
-Android images quickly require several gigabytes:
+The realistic end goal is an Android sidecar integrated into a webOS window or service bridge, not a full replacement firmware.
+
+## Hardware and paths used
+
+Development machine:
 
 ```text
-android-downloads: ~768M
-android-images:    ~1.7G
+NanoPi-R3S
+user: pi
+project path: ~/disk/webos-dirty-binder
 ```
 
-A USB stick was formatted and mounted as:
+TV:
+
+```text
+root@192.168.2.121
+LG webOS TV
+aarch64 kernel 4.4.84 family
+```
+
+Sidecar install path on TV:
+
+```text
+/media/internal/android-sidecar
+```
+
+USB-backed Android storage:
 
 ```text
 /media/internal/android-usb
+/media/internal/android-usb/android-rootfs
+/media/internal/android-usb/android-images
+/media/internal/android-usb/android-downloads
+/media/internal/android-usb/android-mounts
+/media/internal/android-usb/android-data
+/media/internal/android-usb/android-cache
 ```
 
-Final USB-backed layout:
+Compatibility symlinks:
 
 ```text
-/media/internal/android-downloads -> /media/internal/android-usb/android-downloads
-/media/internal/android-images    -> /media/internal/android-usb/android-images
-/media/internal/android-mounts    -> /media/internal/android-usb/android-mounts
 /media/internal/android-rootfs    -> /media/internal/android-usb/android-rootfs
+/media/internal/android-images    -> /media/internal/android-usb/android-images
+/media/internal/android-downloads -> /media/internal/android-usb/android-downloads
+/media/internal/android-mounts    -> /media/internal/android-usb/android-mounts
 ```
 
-Example successful USB state:
+USB became necessary because the TV internal appstore partition is too small for Android images. The USB test environment currently uses an ext filesystem mounted at:
 
 ```text
-/dev/sda1  14.7G total, 2.5G used, 11.4G available
+/media/internal/android-usb
 ```
 
-Conclusion: **external USB storage is effectively required** for Android rootfs work on this TV.
+## Why USB is required
 
----
+The TV internal storage was not large enough for safe extraction of Android images.
 
-## Binder module
-
-The Binder module is loaded on the TV from:
+Observed internal space after early bootstrap:
 
 ```text
-/media/internal/android-sidecar/modules/binder.ko
+/dev/mmcblk0p56  2.7G total, about 1.6-2.0G free depending on cleanup
 ```
 
-The loader resolves non-exported kernel symbols from `/proc/kallsyms` and passes them as module parameters:
+Waydroid/Lineage images require substantially more space:
 
 ```text
-sym_zap_page_range
-sym_put_files_struct
-sym_get_vm_area
-sym___fd_install
-sym___close_fd
-sym_map_kernel_range_noflush
-sym___lock_task_sighand
-sym_get_files_struct
-sym___alloc_fd
+system.zip       ~700-800 MB compressed
+system.img       ~1.5 GB extracted
+vendor.img       ~225 MB
+working mounts   additional metadata/cache space
 ```
 
-Successful load example:
+After moving Android staging to USB, the layout became practical:
 
 ```text
-binder 118784 0 [permanent], Live 0xffffffbffc35f000 (O)
-/dev/binder -> char device major 10 minor 53
-binder protocol_version=8
+/dev/sda1 /media/internal/android-usb  ~14.7G total, ~11G+ free after images
 ```
 
-The module is usually permanent once loaded, so a TV reboot is required to load a newly built `binder.ko`.
+## Repository layout
 
----
-
-## What works today
-
-### ServiceManager / registry
-
-`mini_servicemgr` works as a minimal Android-like service registry. It supports adding and resolving Binder services by name.
-
-Representative services used during milestones:
+Important areas:
 
 ```text
-test.android.fdbridge
-test.android.parcelfd
-```
+build/linux-4.4.84/drivers/android/binder.c
+build/linux-4.4.84/include/uapi/linux/android/binder.h
 
-### Binder object basics
-
-The project has working examples for:
-
-- Opening `/dev/binder`.
-- Binder mmap.
-- Registering local Binder objects.
-- Returning handles.
-- Acquiring/releasing handles.
-- Service lookup.
-- Ping-style transactions.
-- Handling `BR_TRANSACTION`, `BR_REPLY`, `BR_TRANSACTION_COMPLETE`, `BR_NOOP`, `BR_INCREFS`, `BR_ACQUIRE`, `BR_RELEASE`, and `BR_DECREFS`.
-
-### Android-like AIDL / Parcel tests
-
-Implemented and tested areas include:
-
-- AIDL-like client/service Parcel calls.
-- Negative/error calls.
-- One-way calls.
-- Callback services.
-- Callback threadpool client.
-- Listener registry.
-- Unregister/recovery tests.
-- Stale handle tests.
-- Stress tests.
-- Binder return object tests.
-- Unique Binder return object stress/lifecycle tests.
-
-The repository contains many tools/scripts around these milestones under:
-
-```text
 tools/
+  mini_servicemgr / sidecar Binder helpers
+  fd_bridge_* files
+  parcel_fd_lite_* files
+  android_userspace_preflight_v1.cpp
+
 scripts/
+  build-sidecar.sh
+  install-sidecar-tv.sh
+  load-binder-tv.sh
+  run-fd-bridge-smoke-tv.sh
+  run-parcel-fd-lite-smoke-tv.sh
+  run-android-userspace-preflight-v1-tv.sh
+  prepare-android-usb-tv.sh
+  bootstrap-waydroid-rootfs-v0-usb-tv.sh
+  inspect-android-rootfs-v1-tv.sh
+  inspect-android-rootfs-layout-v2-tv.sh
+  run-android-synthetic-rootfs-v1-tv.sh
+  run-android-real-servicemanager-v0-tv.sh
+  collect-android-real-sm-v0-failure-tv.sh
+  diag-android-real-servicemanager-names-tv.sh
+  run-android-service-tool-mini-smoke-tv.sh
+  ensure-android-usb-mounted-tv.sh
+
 docs/
+  milestone and diagnostic notes
 ```
 
----
+## Binder module status
 
-## Direct Binder FD passing: quarantined
+The Binder module is a backported/customized `binder.ko` for the LG webOS kernel environment.
 
-Direct `BINDER_TYPE_FD` was investigated in detail and is currently **disabled/quarantined** on this LG webOS TV.
-
-Symptoms:
+Confirmed working:
 
 ```text
-client sends BINDER_TYPE_FD
-kernel enters the Binder FD case
-kernel returns BR_FAILED_REPLY before delivering the transaction
-service never receives the real FD transaction
-TV may freeze or reboot after the test
+/dev/binder creation
+BINDER_VERSION protocol query
+BINDER_SET_MAX_THREADS
+BINDER_SET_CONTEXT_MGR legacy path
+BINDER_WRITE_READ
+BR_TRANSACTION / BC_TRANSACTION flow
+BR_REPLY flow
+local service registration with mini_servicemgr
+Android client tools talking to mini_servicemgr
 ```
 
-Observed kernel diagnostics:
+Modern ioctl compatibility was added for Android userspace:
 
 ```text
-DIRTY_BINDER_FD_DIAG enter_fd_case line=1680
-DIRTY_BINDER_FD_DIAG failed_reply_before line=1719
-binder: transaction failed 29201, size 136-8
+BINDER_ENABLE_ONEWAY_SPAM_DETECTION  ioctl 0x40046210
+BINDER_SET_CONTEXT_MGR_EXT           ioctl 0x4018620d
 ```
 
-Interpretation:
+These now log:
 
 ```text
-29201 == 0x7211 == BR_FAILED_REPLY
+DIRTY_BINDER_IOCTL_COMPAT_V0 oneway spam detection noop enable=1
+DIRTY_BINDER_IOCTL_COMPAT_V0 set context mgr ext type=0x0 flags=0x0
 ```
+
+This fixed the earlier `-EINVAL` failures from Android's real `servicemanager` startup path.
+
+## Direct Binder FD path status
+
+Direct `BINDER_TYPE_FD` is **quarantined**.
+
+Early FD experiments showed that Android-like direct FD passing through Binder can freeze or reboot the TV. The failure signature included failed Binder replies and unstable allocator behavior in the FD transaction path.
 
 Important conclusion:
 
 ```text
-Direct BINDER_TYPE_FD is unsafe on this TV.
-Do not run direct Binder FD probes.
-Use ParcelFD-lite / SCM_RIGHTS instead.
+Do not use direct BINDER_TYPE_FD on this TV/kernel path.
+Use SCM_RIGHTS for real FD transport.
+Use Binder only for control/token exchange.
 ```
 
-Quarantined direct-FD probes include:
-
-```text
-android_like_fd_object_client/service
-android_like_fd_devnull_client/service
-android_like_fd_passing_client/service
-```
-
-Replacement architecture:
-
-```text
-Binder transaction:
-  token + metadata + control/status
-
-Unix domain socket:
-  SCM_RIGHTS carries the real FD
-
-Receiver:
-  matches token to received FD
-  uses FD locally
-  replies over Binder
-```
-
----
+The direct Binder FD test scripts were intentionally quarantined to avoid freezing the TV.
 
 ## FD Bridge v0
 
-FD Bridge v0 proves that FD transport works safely when moved out of Binder kernel FD passing.
-
-Flow:
+The first safe solution for FD passing was the FD Bridge:
 
 ```text
-client creates pipe with known payload
-client sends read-end FD through Unix socket using SCM_RIGHTS
-client sends token/control transaction over Binder
-service receives FD on socket
+client sends real FD over UNIX socket using SCM_RIGHTS
+client sends token over Binder
 service receives token over Binder
-service matches token
-service reads payload from FD
-service replies over Binder
+service matches token to FD received by socket
+service reads FD
+service replies by Binder
 ```
 
-Target markers:
+Confirmed markers:
 
 ```text
-FD_BRIDGE_SERVICE_SOCKET_READY
-FD_BRIDGE_SERVICE_REGISTERED
 FD_BRIDGE_CLIENT_SOCKET_SEND_OK
 FD_BRIDGE_BINDER_CONTROL_OK
 FD_BRIDGE_SERVICE_GOT_FD
@@ -347,49 +269,23 @@ FD_BRIDGE_SMOKE_OK
 FD_BRIDGE_SMOKE_TV_OK
 ```
 
-Successful milestone result:
-
-```text
-FD_BRIDGE_SMOKE_TV_OK
-```
-
-Files:
-
-```text
-tools/fd_bridge_common.hpp
-tools/fd_bridge_service.cpp
-tools/fd_bridge_client.cpp
-scripts/run-fd-bridge-smoke-tv.sh
-```
-
----
-
 ## ParcelFileDescriptor-lite v0
 
-`ParcelFileDescriptor-lite` wraps the FD Bridge behind an Android-like API shape.
-
-Conceptual API:
-
-```cpp
-parcel_fd_lite_write_fd(socket_path, fd, kind, label, &token);
-parcel_fd_lite_call_binder(binder_fd, handle, token, kind, text, &reply);
-```
-
-Internal behavior:
+ParcelFD-lite wraps the FD Bridge into an Android-like abstraction:
 
 ```text
-write_fd:
-  create token
-  send FD through SCM_RIGHTS
-  write token/kind into Binder payload
+parcel_fd_lite_write_fd(fd)
+  creates token
+  sends FD by SCM_RIGHTS
+  writes token/kind into Binder payload
 
-read_fd:
-  read token/kind from Binder payload
-  match token with SCM_RIGHTS-received FD
-  return/use local FD
+parcel_fd_lite_read_fd(token)
+  receives Binder token
+  matches SCM_RIGHTS FD
+  returns local FD
 ```
 
-Target markers:
+Confirmed markers:
 
 ```text
 PARCELFD_LITE_TOKEN_ENCODE_OK
@@ -403,151 +299,93 @@ PARCELFD_LITE_SMOKE_OK
 PARCELFD_LITE_SMOKE_TV_OK
 ```
 
-Successful milestone result:
-
-```text
-PARCELFD_LITE_SMOKE_TV_OK
-```
-
-Files:
-
-```text
-tools/parcel_fd_lite_common.hpp
-tools/parcel_fd_lite_service.cpp
-tools/parcel_fd_lite_client.cpp
-scripts/run-parcel-fd-lite-smoke-tv.sh
-```
-
----
+This is the current safe FD transport layer for Android sidecar work.
 
 ## Android userspace preflight v1
 
-This milestone proves that an Android-like process launched from the rootfs staging area can still talk to the sidecar Binder services.
-
-Flow:
+A static preflight binary was run from an Android-like rootfs directory and confirmed that a process launched from that rootfs can:
 
 ```text
-host starts mini_servicemgr
-host starts parcel_fd_lite_service
-rootfs process opens /dev/binder
-rootfs process resolves test.android.parcelfd
-rootfs process sends FD using ParcelFD-lite
-service reads FD payload
-rootfs process receives Binder reply
+open /dev/binder
+query mini_servicemgr
+resolve test.android.parcelfd
+send an FD through ParcelFD-lite
+receive a Binder reply
 ```
 
-Target markers:
-
-```text
-ANDROID_USERSPACE_PREFLIGHT_V1_STARTED
-ANDROID_USERSPACE_PREFLIGHT_V1_BINDER_HANDLE_OK
-ANDROID_USERSPACE_PREFLIGHT_V1_PARCELFD_WRITE_OK
-ANDROID_USERSPACE_PREFLIGHT_V1_BINDER_REPLY_OK
-ANDROID_USERSPACE_PREFLIGHT_V1_SMOKE_OK
-ANDROID_USERSPACE_PREFLIGHT_V1_TV_OK
-```
-
-Successful milestone result:
+Confirmed marker:
 
 ```text
 ANDROID_USERSPACE_PREFLIGHT_V1_TV_OK
 ```
 
-Files:
+## Android image source
+
+Waydroid/Lineage ARM64 images are used as Android userspace material:
 
 ```text
-tools/android_userspace_preflight_v1.cpp
-scripts/run-android-userspace-preflight-v1-tv.sh
+system.img
+vendor.img
 ```
 
----
+This project does not currently run Waydroid itself. The images are used because they provide Android userspace components designed to run above a Linux kernel, which matches the sidecar direction better than a flashable Android TV ROM.
 
-## Android rootfs bootstrap v0
-
-Android rootfs bootstrap downloads/extracts Waydroid/LineageOS ARM64 images to USB-backed storage.
-
-This project is **not running Waydroid itself**. Waydroid is used as a convenient source of Android/LineageOS ARM64 `system.img` and `vendor.img` suitable for a Linux-hosted Android userspace model.
-
-Downloaded/staged images:
+Current images are stored on USB:
 
 ```text
 /media/internal/android-images/system.img
 /media/internal/android-images/vendor.img
 ```
 
-Download/extract storage:
+## Synthetic Android rootfs
+
+The Waydroid/Lineage `system.img` layout is not a simple `/system/bin` subdirectory mount. The useful layout is:
 
 ```text
-/media/internal/android-downloads
-/media/internal/android-images
-```
-
-Mount staging:
-
-```text
-/media/internal/android-mounts
-```
-
-Successful USB-backed bootstrap marker:
-
-```text
-ANDROID_ROOTFS_BOOTSTRAP_V0_USB_DONE
-```
-
----
-
-## Android image layout findings
-
-The Waydroid/Lineage images use the following relevant layout:
-
-```text
-system.img:
+system.img mounted raw:
   /system/bin
   /system/lib64
   /system/apex
-  /system/bin/toybox
-  /system/bin/sh
-  /system/bin/getprop -> toolbox
-  /system/bin/app_process64
-  /system/bin/servicemanager
-  /system/bin/hwservicemanager
-  /system/bin/surfaceflinger
-  /system/bin/init
-  /system/bin/linker64 -> /apex/com.android.runtime/bin/linker64
-  /system/apex/com.android.runtime/bin/linker64
+  /system/product
+  /system/system_ext
 
-vendor.img:
+vendor.img mounted raw:
   /bin
   /lib64
   /etc
   /build.prop
-  /bin/sh
-  /bin/getprop -> toolbox
-  /bin/vndservicemanager
-  /bin/hw/android.hardware.* services
 ```
 
-A naive chroot failed because Android binaries expect `/apex/...` to exist. The fix was to create a synthetic rootfs with `/apex` bind-mounted from `system.img`.
-
----
-
-## Android synthetic rootfs v1
-
-Synthetic rootfs layout:
+A synthetic rootfs is created at:
 
 ```text
 /media/internal/android-rootfs
-  /system -> bind mount from system.img:/system
-  /vendor -> bind mount from vendor.img:/
-  /apex   -> bind mount from system.img:/system/apex
-  /dev    -> minimal device nodes, including binder
-  /proc   -> procfs
-  /sys    -> sysfs
-  /data   -> USB-backed writable data
-  /cache  -> USB-backed writable cache
 ```
 
-Successful mount markers:
+with bind mounts:
+
+```text
+/system -> system_raw/system
+/vendor -> vendor_raw
+/apex   -> system_raw/system/apex
+/data   -> USB-backed writable data
+/cache  -> USB-backed writable cache
+/proc   -> procfs
+/sys    -> sysfs
+/dev    -> minimal dev nodes including binder
+```
+
+Confirmed working inside chroot:
+
+```text
+/system/bin/toybox true
+/system/bin/toybox uname -a
+/system/bin/sh -c 'echo ...'
+/system/bin/getprop
+/apex/com.android.runtime/bin/linker64
+```
+
+Confirmed markers:
 
 ```text
 ANDROID_SYNTH_ROOTFS_SYSTEM_RAW_MOUNT_OK
@@ -555,11 +393,6 @@ ANDROID_SYNTH_ROOTFS_VENDOR_RAW_MOUNT_OK
 ANDROID_SYNTH_ROOTFS_BIND_SYSTEM_OK
 ANDROID_SYNTH_ROOTFS_BIND_VENDOR_OK
 ANDROID_SYNTH_ROOTFS_BIND_APEX_OK
-```
-
-Successful runtime markers:
-
-```text
 ANDROID_SYNTH_ROOTFS_TOYBOX_OK
 ANDROID_SYNTH_ROOTFS_SH_OK_MARKER
 ANDROID_SYNTH_ROOTFS_V1_OK
@@ -572,171 +405,153 @@ Known warning:
 linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
 ```
 
-This does not block simple binaries. It means Android `init`/`linkerconfig` has not generated the normal linker namespace config yet. Future work should generate or provide `/linkerconfig/ld.config.txt` before starting more complex daemons.
+This does not block simple binaries. It will matter later for more complex Android services.
 
-Files:
+## Real Android servicemanager status
 
-```text
-scripts/run-android-synthetic-rootfs-v1-tv.sh
-```
+The real Android `/system/bin/servicemanager` now starts and remains alive after modern Binder ioctl compatibility was added.
 
----
-
-## Waydroid: what it means here
-
-Waydroid is a Linux project that runs Android in a container-like environment. This project does **not** currently run Waydroid as-is.
-
-Waydroid is used here only as a source for Android/LineageOS ARM64 images:
+Confirmed:
 
 ```text
-system.img
-vendor.img
+ANDROID_REAL_SM_STARTED
+ANDROID_REAL_SM_PROCESS_ALIVE
+DIRTY_BINDER_IOCTL_COMPAT_V0 oneway spam detection noop
+DIRTY_BINDER_IOCTL_COMPAT_V0 set context mgr ext
 ```
 
-Project-specific interpretation:
+However, it does **not currently register and return external services correctly**.
+
+Observed behavior:
 
 ```text
-Waydroid official:
-  Linux host + container + Android images + integration stack
-
-webOS Dirty Binder:
-  webOS host + custom binder.ko + mini_servicemgr + ParcelFD-lite + USB Android images
+ParcelFD-lite service calls addService
+service side receives a BR_REPLY
+service believes registration completed
+client getService returns null handle
+Android service list shows only:
+  manager: [android.os.IServiceManager]
 ```
 
-This is closer to an Android sidecar than to a full Android TV ROM.
-
----
-
-## Why not flash Android TV?
-
-Replacing webOS is not the current path.
-
-Reasons:
-
-- webOS owns the real compositor/windowing stack.
-- webOS owns display, audio, input, remote, network, and proprietary TV services.
-- Replacing webOS would require bootloader/kernel/display/audio/media/DRM/HAL work.
-- Direct Binder FD passing is unstable in this kernel, so stock Android userspace would not work unmodified anyway.
-
-Current path:
+Tested names included:
 
 ```text
-Option B:
-  keep webOS as host
-  run Android-compatible userspace sidecar
-  bridge missing pieces incrementally
+test.android.parcelfd
+activity
+package
+media.metrics
+gpu
+surfaceflinger
 ```
 
----
+All failed to return a usable handle through the real Android `servicemanager`.
 
-## hwbinder / vndbinder status
+### Does this mean real servicemanager is impossible?
 
-Current TV state:
+No. It means the next gap is not basic Binder transport anymore; it is likely one of:
 
 ```text
-/dev/binder    exists and works
-/dev/hwbinder  missing
-/dev/vndbinder missing
+Android servicemanager policy/service_contexts restrictions
+missing SELinux/service_manager behavior
+addService reply/status not being parsed correctly by our libbinder-lite
+modern IServiceManager protocol mismatch
+missing linkerconfig/properties affecting servicemanager behavior
 ```
 
-`hwbinder` and `vndbinder` are not implemented yet.
+The important point: the kernel-level modern ioctl blocker was fixed. The remaining problem is higher-level Android ServiceManager compatibility.
 
-They should be addressed after:
+### Why not keep using real servicemanager now?
 
-1. Synthetic rootfs basic Android binaries work.
-2. Android ServiceManager or service-manager shim strategy is clear.
-3. `/linkerconfig` issue is handled.
-4. The project knows whether to run Android `servicemanager`, keep `mini_servicemgr`, or bridge between them.
+Because `mini_servicemgr` already works and Android `/system/bin/service` can see services registered in it.
 
-For now:
+Current practical decision:
 
 ```text
-Do not start HALs yet.
-Do not start hwservicemanager yet unless in a contained smoke test.
-Do not start zygote yet.
-Do not start SurfaceFlinger yet.
+Use mini_servicemgr as the active ServiceManager shim.
+Keep real servicemanager as a diagnostic/compatibility target.
+Do not block Android sidecar progress on real servicemanager yet.
 ```
 
----
+## mini_servicemgr status
 
-## Current recommended next milestone
+`mini_servicemgr` is now the main compatibility shim.
 
-### Android servicemanager smoke v0
-
-Goal:
+Confirmed:
 
 ```text
-Run a controlled Android userspace daemon from the synthetic rootfs, starting with servicemanager or a safe service-manager probe, without starting zygote or SurfaceFlinger.
+ParcelFD-lite service registers into mini_servicemgr
+ParcelFD-lite native client resolves and calls it
+Android /system/bin/service list/check can see the service
 ```
 
-Questions to answer:
+Latest confirmed markers:
 
 ```text
-Can Android /system/bin/servicemanager open our /dev/binder?
-Does it understand this Binder protocol/module behavior?
-Does it conflict with mini_servicemgr as context manager?
-Can we run it only when mini_servicemgr is stopped?
-If Android servicemanager fails, can mini_servicemgr remain the permanent shim?
+ANDROID_SERVICE_TOOL_MINI_NATIVE_PFD_OK
+ANDROID_SERVICE_TOOL_MINI_ANDROID_CLIENT_SEES_SERVICE
+ANDROID_SERVICE_TOOL_MINI_SMOKE_DONE
 ```
 
-Potential sequence:
+This is a major milestone: an Android userspace tool from the mounted Android rootfs can talk to our ServiceManager shim.
+
+## Why mini_servicemgr is acceptable
+
+Android itself primarily needs a Binder context manager that can answer expected `IServiceManager` transactions. It does not strictly require the exact stock `servicemanager` binary if the shim behaves compatibly enough for the components we want to run.
+
+Advantages of mini_servicemgr:
 
 ```text
-1. Keep synthetic rootfs mounted.
-2. Stop mini_servicemgr.
-3. Try Android /system/bin/servicemanager under chroot.
-4. Capture logs and exit status.
-5. If it becomes context manager, probe it carefully.
-6. If it fails, continue using mini_servicemgr.
+simple and observable
+under our control
+already supports tested AOSP-style add/get/list/check flows
+works with our backported Binder
+works with ParcelFD-lite
+can be extended incrementally
+avoids Android SELinux policy/service_contexts blockers for now
 ```
 
-No zygote yet.
+Disadvantages:
 
----
+```text
+not full Android servicemanager yet
+may miss newer IServiceManager transactions
+may not implement declared service policies
+may not satisfy system_server/zygote expectations yet
+needs more protocol coverage as Android components become more complex
+```
 
-## Build and deploy basics
+This is acceptable for the sidecar path because the project is not trying to boot full Android immediately.
 
-Build sidecar from NanoPi:
+## Current architecture decision
+
+Current winning architecture:
+
+```text
+webOS host
+  └─ custom Binder sidecar
+       ├─ binder.ko
+       ├─ mini_servicemgr as context manager
+       ├─ ParcelFD-lite for FD passing
+       └─ Android userspace chroot from USB
+```
+
+Real Android `servicemanager` remains a future compatibility target, not the current default.
+
+## How to prepare after TV reboot
+
+After every TV reboot, the USB may need to be remounted and symlinks restored:
 
 ```bash
-cd ~/disk/webos-dirty-binder
-./scripts/build-sidecar.sh
+TV_IP=192.168.2.121 ./scripts/ensure-android-usb-mounted-tv.sh
 ```
 
-Install to TV:
+Expected marker:
 
-```bash
-TV_IP=192.168.2.121 \
-SIDE_DIR=/media/internal/android-sidecar \
-./scripts/install-sidecar-tv.sh
+```text
+ANDROID_USB_READY_AFTER_REBOOT
 ```
 
-Load Binder on TV:
-
-```bash
-ssh root@192.168.2.121
-cd /media/internal/android-sidecar
-./load-binder-tv.sh /media/internal/android-sidecar/modules/binder.ko
-```
-
-Run ParcelFD-lite smoke:
-
-```bash
-TV_IP=192.168.2.121 \
-SIDE_DIR=/media/internal/android-sidecar \
-./scripts/run-parcel-fd-lite-smoke-tv.sh
-```
-
-Run Android userspace preflight:
-
-```bash
-TV_IP=192.168.2.121 \
-SIDE_DIR=/media/internal/android-sidecar \
-ROOTFS=/media/internal/android-rootfs \
-./scripts/run-android-userspace-preflight-v1-tv.sh
-```
-
-Run synthetic Android rootfs:
+Then re-establish synthetic rootfs mounts:
 
 ```bash
 TV_IP=192.168.2.121 \
@@ -747,235 +562,347 @@ USB_DIR=/media/internal/android-usb \
 ./scripts/run-android-synthetic-rootfs-v1-tv.sh
 ```
 
----
-
-## Safety rules
-
-### Do not run direct Binder FD probes
-
-Direct `BINDER_TYPE_FD` can freeze/reboot this TV.
-
-Avoid:
+Expected markers:
 
 ```text
-run-android-like-fd-object-smoke-tv.sh
-run-android-like-fd-devnull-smoke-tv.sh
-run-android-like-fd-passing-smoke-tv.sh
-run-binder-fd-passing-tv.sh
+ANDROID_SYNTH_ROOTFS_V1_OK
+ANDROID_SYNTHETIC_ROOTFS_V1_DONE
 ```
 
-Use instead:
+## Core smoke tests
+
+### ParcelFD-lite smoke
+
+```bash
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/run-parcel-fd-lite-smoke-tv.sh
+```
+
+Expected:
 
 ```text
-run-fd-bridge-smoke-tv.sh
-run-parcel-fd-lite-smoke-tv.sh
+PARCELFD_LITE_SMOKE_TV_OK
 ```
 
-### Do not write to internal partitions casually
+### Android userspace preflight
 
-Avoid touching:
+```bash
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+ROOTFS=/media/internal/android-rootfs \
+./scripts/run-android-userspace-preflight-v1-tv.sh
+```
+
+Expected:
 
 ```text
-/dev/mmcblk0*
-/mnt/lg/preload
-/mnt/lg/appstore/preload
-/var/palm
-/webOS system partitions
+ANDROID_USERSPACE_PREFLIGHT_V1_TV_OK
 ```
 
-Android staging should live on USB:
+### Synthetic Android rootfs
+
+```bash
+TV_IP=192.168.2.121 \
+ROOTFS=/media/internal/android-rootfs \
+IMG_DIR=/media/internal/android-images \
+MNT_DIR=/media/internal/android-mounts \
+USB_DIR=/media/internal/android-usb \
+./scripts/run-android-synthetic-rootfs-v1-tv.sh
+```
+
+Expected:
 
 ```text
-/media/internal/android-usb
+ANDROID_SYNTH_ROOTFS_V1_OK
+ANDROID_SYNTHETIC_ROOTFS_V1_DONE
 ```
 
-### Reboot after Binder module changes
+### Android service tool against mini_servicemgr
 
-The Binder module is permanent once loaded:
+```bash
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+ROOTFS=/media/internal/android-rootfs \
+SERVICE=test.android.parcelfd \
+./scripts/run-android-service-tool-mini-smoke-tv.sh
+```
+
+Expected:
 
 ```text
-binder ... [permanent]
+ANDROID_SERVICE_TOOL_MINI_NATIVE_PFD_OK
+ANDROID_SERVICE_TOOL_MINI_ANDROID_CLIENT_SEES_SERVICE
+ANDROID_SERVICE_TOOL_MINI_SMOKE_DONE
 ```
 
-Reboot TV before testing a newly built `binder.ko`.
+## Build and install
 
----
-
-## Useful scripts
-
-Storage / setup:
-
-```text
-scripts/audit-android-rootfs-readiness-tv.sh
-scripts/audit-tv-storage-for-android.sh
-scripts/deep-tv-storage-map-busybox.sh
-scripts/prepare-android-usb-tv.sh
-scripts/cleanup-android-sidecar-tv.sh
-```
-
-Rootfs / Android image work:
-
-```text
-scripts/bootstrap-waydroid-rootfs-v0-tv.sh
-scripts/bootstrap-waydroid-rootfs-v0-usb-tv.sh
-scripts/inspect-android-rootfs-v1-tv.sh
-scripts/inspect-android-rootfs-layout-v2-tv.sh
-scripts/run-android-synthetic-rootfs-v1-tv.sh
-```
-
-FD bridge / ParcelFD:
-
-```text
-scripts/run-fd-bridge-smoke-tv.sh
-scripts/run-parcel-fd-lite-smoke-tv.sh
-```
-
-Userspace preflight:
-
-```text
-scripts/run-android-userspace-preflight-v1-tv.sh
-```
-
-Build/deploy:
-
-```text
-scripts/build-sidecar.sh
-scripts/install-sidecar-tv.sh
-scripts/load-binder-tv.sh
-```
-
----
-
-## Milestone timeline
-
-### Completed
-
-```text
-Binder module loads on LG webOS
-/dev/binder usable
-mini ServiceManager
-Binder ping/echo
-Lifecycle/death notification tests
-Callback tests
-Threadpool callback tests
-AIDL-like Parcel tests
-Negative/stale/recovery tests
-One-way transaction tests
-Stress tests
-Binder return object tests
-Direct Binder FD autopsy
-Direct Binder FD quarantine
-SCM_RIGHTS FD Bridge v0
-ParcelFileDescriptor-lite v0
-Android userspace preflight v1
-USB Android staging
-Waydroid/Lineage image bootstrap
-Synthetic Android rootfs v1
-```
-
-### In progress / next
-
-```text
-Android servicemanager smoke v0
-/linkerconfig generation or shim
-Binder compatibility with Android native servicemanager
-hwbinder/vndbinder strategy
-minimal Android init subset or custom supervisor
-webOS window bridge
-graphics/audio/input bridges
-```
-
-### Not yet
-
-```text
-zygote
-PackageManager
-SurfaceFlinger
-Android app launch
-Android TV launcher
-HAL stack
-hwbinder/vndbinder full support
-webOS replacement/flashing
-```
-
----
-
-## Current project philosophy
-
-This project is not trying to immediately boot a stock Android TV ROM.
-
-The project is building a compatibility sidecar:
-
-```text
-webOS stays alive
-Android pieces are introduced one at a time
-Binder semantics are preserved where safe
-FD passing is emulated safely using SCM_RIGHTS
-USB provides Android storage
-UI/graphics will eventually be bridged through webOS
-```
-
-The immediate technical focus is to determine how much of Android userspace can run with:
-
-```text
-custom /dev/binder
-mini_servicemgr or Android servicemanager shim
-ParcelFD-lite
-synthetic /system /vendor /apex rootfs
-webOS as host
-```
-
----
-
-## Rename README_V2.md to README.md and push
-
-After reviewing this file, rename it on the NanoPi and push to `main`:
+Typical build/install:
 
 ```bash
 cd ~/disk/webos-dirty-binder
 set -euo pipefail
 
-cp /path/to/README_V2.md README.md
+./scripts/build-sidecar.sh
 
-git add -A
-git commit -m "docs: refresh README with Android sidecar roadmap" || true
-
-git switch main
-git pull --ff-only origin main
-
-git add -A
-git commit -m "docs: refresh README with Android sidecar roadmap" || true
-
-git push origin main
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+./scripts/install-sidecar-tv.sh
 ```
 
-If working from a feature branch:
+Important: `binder.ko` is effectively permanent once loaded. To test a new Binder module, install it and reboot the TV:
+
+```bash
+ssh root@192.168.2.121 'sync; reboot' || true
+```
+
+After reboot:
+
+```bash
+TV_IP=192.168.2.121 ./scripts/ensure-android-usb-mounted-tv.sh
+```
+
+## How to verify patched binder.ko
+
+Local:
+
+```bash
+strings build/linux-4.4.84/drivers/android/binder.ko | grep DIRTY_BINDER_IOCTL_COMPAT_V0
+```
+
+TV-installed:
+
+```bash
+ssh root@192.168.2.121 \
+  'strings /media/internal/android-sidecar/modules/binder.ko | grep DIRTY_BINDER_IOCTL_COMPAT_V0'
+```
+
+Runtime dmesg:
+
+```bash
+ssh root@192.168.2.121 \
+  "dmesg | grep -Ei 'DIRTY_BINDER_IOCTL_COMPAT_V0|ioctl 40046210|ioctl 4018620d' | tail -80"
+```
+
+Expected:
+
+```text
+DIRTY_BINDER_IOCTL_COMPAT_V0 oneway spam detection noop enable=1
+DIRTY_BINDER_IOCTL_COMPAT_V0 set context mgr ext type=0x0 flags=0x0
+```
+
+## Known risks
+
+### Direct FD path can freeze/reboot the TV
+
+Do not run direct `BINDER_TYPE_FD` smoke tests unless intentionally debugging that dangerous path. Use ParcelFD-lite instead.
+
+### binder.ko cannot be unloaded normally
+
+The module is loaded as permanent/live. Reboot the TV to load a new version.
+
+### USB mount is not persistent yet
+
+After reboot, run:
+
+```bash
+TV_IP=192.168.2.121 ./scripts/ensure-android-usb-mounted-tv.sh
+```
+
+### Android linkerconfig is missing
+
+Simple binaries work, but complex Android services may need generated `/linkerconfig/ld.config.txt`.
+
+Current warning:
+
+```text
+linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+```
+
+### Real Android servicemanager is not usable yet
+
+It starts, but does not return externally added services correctly. Continue using `mini_servicemgr`.
+
+## Troubleshooting
+
+### `mkdir: can't create directory '/media/internal/android-rootfs': No such file or directory`
+
+Usually the USB is not mounted after reboot.
+
+Run:
+
+```bash
+TV_IP=192.168.2.121 ./scripts/ensure-android-usb-mounted-tv.sh
+```
+
+### `LOCAL_KO_MISSING_IOCTL_COMPAT_STRING`
+
+The Binder module was not rebuilt from patched source.
+
+Check:
+
+```bash
+strings build/linux-4.4.84/drivers/android/binder.ko | grep DIRTY_BINDER_IOCTL_COMPAT_V0
+```
+
+If missing, force rebuild the Binder module and reinstall.
+
+### Android servicemanager returns null handles
+
+Current known limitation. Use `mini_servicemgr`.
+
+### `Too many levels of symbolic links` in Android chroot
+
+The `system.img` layout was mounted incorrectly. Use synthetic rootfs with `/system`, `/vendor`, and `/apex` bind mounts.
+
+### `No such file or directory` for Android binaries that exist
+
+Usually dynamic linker/APEX layout issue. Ensure `/apex` is bind-mounted from `system_raw/system/apex`.
+
+## Why real servicemanager failed but mini_servicemgr works
+
+The stock Android `servicemanager` is more than a simple registry. It expects modern Android environment pieces:
+
+```text
+newer Binder ioctls
+service_contexts / service policy
+possibly SELinux service_manager checks
+modern IServiceManager protocol details
+linkerconfig/properties setup
+```
+
+The kernel ioctl part is now fixed. The remaining failure is likely policy/protocol/environment.
+
+`mini_servicemgr` works because it implements the subset we need directly and avoids policy restrictions for now. Android `/system/bin/service` can already see it, which proves the shim approach is viable.
+
+## Roadmap
+
+Recommended next milestones:
+
+### 1. Android ServiceManager shim v1
+
+Goal:
+
+```text
+harden mini_servicemgr as the default Android ServiceManager shim
+implement more IServiceManager transactions
+improve service list/check/add/get behavior
+add better status parsing and diagnostics
+```
+
+### 2. Android tool smoke set
+
+Try low-risk Android tools:
+
+```text
+/system/bin/service list
+/system/bin/service check <name>
+/system/bin/logcat --help
+/system/bin/cmd --help
+/system/bin/dumpsys --help
+/system/bin/app_process64 --help
+```
+
+### 3. linkerconfig/properties bootstrap
+
+Create enough `/linkerconfig`, `default.prop`, and property service behavior for more Android binaries.
+
+### 4. hwbinder/vndbinder decision
+
+Do not implement too early. Add only when a real component requires:
+
+```text
+/dev/hwbinder
+/dev/vndbinder
+hwservicemanager
+vndservicemanager
+HAL registration
+```
+
+### 5. Graphics/window bridge
+
+Because webOS remains the host, the long-term UI path likely needs:
+
+```text
+webOS app/window shell
+Android buffer/graphics bridge
+input bridge
+possibly software rendering first
+later hardware acceleration investigation
+```
+
+### 6. Android runtime escalation
+
+Only after service shim, properties, linkerconfig, logging, and basic tools are stable:
+
+```text
+try selected native Android daemons
+then app_process experiments
+then zygote/system_server research
+```
+
+Do not start `zygote`, `system_server`, or `surfaceflinger` yet.
+
+## Current recommended default stack
+
+```text
+binder.ko with modern ioctl compat
+mini_servicemgr as context manager
+ParcelFD-lite for FD transport
+Android synthetic rootfs from USB
+Waydroid/Lineage system/vendor images
+Android /system/bin/service for introspection
+```
+
+This is the current stable base for further development.
+
+## Quick recovery sequence after reboot
 
 ```bash
 cd ~/disk/webos-dirty-binder
 set -euo pipefail
 
-FROM_BRANCH="$(git branch --show-current)"
+TV_IP=192.168.2.121 ./scripts/ensure-android-usb-mounted-tv.sh
 
-git add -A
-git commit -m "docs: refresh README with Android sidecar roadmap" || true
+TV_IP=192.168.2.121 \
+ROOTFS=/media/internal/android-rootfs \
+IMG_DIR=/media/internal/android-images \
+MNT_DIR=/media/internal/android-mounts \
+USB_DIR=/media/internal/android-usb \
+./scripts/run-android-synthetic-rootfs-v1-tv.sh
 
-git push -u origin "$FROM_BRANCH"
-
-git switch main
-git pull --ff-only origin main
-
-if [ "$FROM_BRANCH" != "main" ]; then
-  git merge --no-ff "$FROM_BRANCH" -m "merge $FROM_BRANCH: README Android sidecar roadmap"
-fi
-
-git push origin main
+TV_IP=192.168.2.121 \
+SIDE_DIR=/media/internal/android-sidecar \
+ROOTFS=/media/internal/android-rootfs \
+SERVICE=test.android.parcelfd \
+./scripts/run-android-service-tool-mini-smoke-tv.sh
 ```
 
----
-
-## One-line current status
+Expected final markers:
 
 ```text
-webOS Dirty Binder now has a working Binder control plane, safe ParcelFD-lite FD transport, USB-backed Android/Waydroid images, and a synthetic Android rootfs capable of running basic Android binaries inside chroot on LG webOS.
+ANDROID_USB_READY_AFTER_REBOOT
+ANDROID_SYNTHETIC_ROOTFS_V1_DONE
+ANDROID_SERVICE_TOOL_MINI_NATIVE_PFD_OK
+ANDROID_SERVICE_TOOL_MINI_ANDROID_CLIENT_SEES_SERVICE
+ANDROID_SERVICE_TOOL_MINI_SMOKE_DONE
 ```
+
+## Summary
+
+The project is no longer just a Binder bring-up. It is now a working foundation for an Android sidecar on webOS:
+
+```text
+Binder works.
+Direct Binder FD path is unsafe and quarantined.
+SCM_RIGHTS FD passing works.
+ParcelFD-lite works.
+Android userspace rootfs works from USB.
+Android linker and shell work.
+Modern Binder ioctls needed by Android servicemanager are handled.
+Real Android servicemanager starts but is not usable yet for external services.
+mini_servicemgr is the current correct shim and is visible to Android /system/bin/service.
+```
+
+The next engineering step is to evolve `mini_servicemgr` into a more complete Android ServiceManager shim, then gradually run more Android userspace components without trying to boot the full Android framework too early.
