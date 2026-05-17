@@ -145,3 +145,10 @@ echo "== Binder meta transactions smoke =="
 ./scripts/run-binder-meta-transactions-tv.sh
 
 echo "BINDER_META_TRANSACTIONS_V0_OK"
+
+
+echo "== Android-like AIDL Binder return object smoke =="
+
+./scripts/run-android-like-aidl-binder-return-tv.sh
+
+echo "AIDL_LIKE_BINDER_RETURN_V0_OK"
