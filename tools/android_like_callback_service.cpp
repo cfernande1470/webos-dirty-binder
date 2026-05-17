@@ -63,6 +63,18 @@ static int process_register_callback(int fd, struct binder_transaction_data *tr)
     if (cb_binder_release_handle(fd, callback_handle, "callback service BC_RELEASE callback") != 0)
         return -1;
 
+    if (tr->flags & TF_ONE_WAY) {
+        if (cb_binder_free_buffer(fd,
+                                  tr->data.ptr.buffer,
+                                  "callback service free oneway register") != 0)
+            return -1;
+
+        printf("callback service: one-way register complete, no BR_REPLY\n");
+        printf("ANDROID_LIKE_CALLBACK_SERVICE_OK\n");
+        fflush(stdout);
+        return 0;
+    }
+
     if (cb_send_text_reply(fd,
                            tr->data.ptr.buffer,
                            0,

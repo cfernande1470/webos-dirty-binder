@@ -149,10 +149,11 @@ static int threadpool_client_register_callback(int fd, uint32_t service_handle) 
     uint32_t cmd;
     struct binder_transaction_data tr;
     int first = 1;
+    int transaction_complete = 0;
 
     if (cb_parcel_write_i32(parcel, sizeof(parcel), &parcel_size, 0) != 0 ||
         cb_parcel_write_string16_ascii(parcel, sizeof(parcel), &parcel_size, ANDROID_LIKE_CALLBACK_DESCRIPTOR) != 0 ||
-        cb_parcel_write_string16_ascii(parcel, sizeof(parcel), &parcel_size, "register threadpool client callback") != 0) {
+        cb_parcel_write_string16_ascii(parcel, sizeof(parcel), &parcel_size, "register threadpool client callback one-way") != 0) {
         fprintf(stderr, "threadpool client: failed to build register Parcel\n");
         return -1;
     }
@@ -174,7 +175,7 @@ static int threadpool_client_register_callback(int fd, uint32_t service_handle) 
     memset(&tr, 0, sizeof(tr));
     tr.target.handle = service_handle;
     tr.code = ANDROID_LIKE_CALLBACK_REGISTER;
-    tr.flags = TF_ACCEPT_FDS;
+    tr.flags = TF_ACCEPT_FDS | TF_ONE_WAY;
     tr.data_size = parcel_size;
     tr.offsets_size = sizeof(offsets);
     tr.data.ptr.buffer = (binder_uintptr_t)parcel;
@@ -184,11 +185,11 @@ static int threadpool_client_register_callback(int fd, uint32_t service_handle) 
     cb_append_u32(&p, cmd);
     cb_append_bytes(&p, &tr, sizeof(tr));
 
-    printf("threadpool client main: sending local callback object ptr=0x%" PRIx64 " cookie=0x%" PRIx64 "\n",
+    printf("threadpool client main: sending ONE_WAY local callback object ptr=0x%" PRIx64 " cookie=0x%" PRIx64 "\n",
            (uint64_t)kThreadpoolClientCallbackPtr,
            (uint64_t)kThreadpoolClientCallbackCookie);
 
-    for (;;) {
+    while (!transaction_complete) {
         int n;
         uint8_t *ptr;
         uint8_t *end;
@@ -198,7 +199,7 @@ static int threadpool_client_register_callback(int fd, uint32_t service_handle) 
                                  first ? (size_t)(p - writebuf) : 0,
                                  readbuf,
                                  sizeof(readbuf),
-                                 first ? "threadpool client main register call" : "threadpool client main wait");
+                                 first ? "threadpool client main oneway register call" : "threadpool client main oneway wait");
         first = 0;
 
         if (n < 0)
@@ -214,8 +215,15 @@ static int threadpool_client_register_callback(int fd, uint32_t service_handle) 
 
             printf("threadpool client main got %s 0x%08x\n", cb_cmd_name(rcmd), rcmd);
 
-            if (rcmd == BR_NOOP || rcmd == BR_TRANSACTION_COMPLETE || rcmd == BR_SPAWN_LOOPER)
+            if (rcmd == BR_NOOP || rcmd == BR_SPAWN_LOOPER)
                 continue;
+
+            if (rcmd == BR_TRANSACTION_COMPLETE) {
+                transaction_complete = 1;
+                printf("ANDROID_LIKE_THREADPOOL_ONEWAY_REGISTER_SENT\n");
+                fflush(stdout);
+                continue;
+            }
 
             if (rcmd == BR_TRANSACTION) {
                 struct binder_transaction_data incoming;
@@ -239,7 +247,6 @@ static int threadpool_client_register_callback(int fd, uint32_t service_handle) 
 
             if (rcmd == BR_REPLY) {
                 struct binder_transaction_data reply;
-                struct callback_text_payload *rp = NULL;
 
                 if (ptr + sizeof(reply) > end)
                     return -1;
@@ -247,27 +254,10 @@ static int threadpool_client_register_callback(int fd, uint32_t service_handle) 
                 memcpy(&reply, ptr, sizeof(reply));
                 ptr += sizeof(reply);
 
-                if (reply.data.ptr.buffer && reply.data_size >= sizeof(struct callback_text_payload))
-                    rp = (struct callback_text_payload *)(uintptr_t)reply.data.ptr.buffer;
+                cb_binder_free_buffer(fd, reply.data.ptr.buffer, "threadpool client main unexpected reply free");
 
-                if (!rp || rp->magic != ANDROID_LIKE_CALLBACK_MAGIC || rp->status != 0) {
-                    fprintf(stderr, "threadpool client main bad final reply\n");
-                    cb_binder_free_buffer(fd, reply.data.ptr.buffer, "threadpool client main free bad final reply");
-                    return -1;
-                }
-
-                printf("threadpool client main final reply text=%s\n", rp->text);
-                cb_binder_free_buffer(fd, reply.data.ptr.buffer, "threadpool client main free final reply");
-
-                if (!g_callback_seen.load() || !g_callback_ok.load()) {
-                    fprintf(stderr, "threadpool client main final reply arrived but callback thread marker missing\n");
-                    return -1;
-                }
-
-                printf("ANDROID_LIKE_THREADPOOL_MAIN_FINAL_REPLY_OK\n");
-                printf("ANDROID_LIKE_THREADPOOL_SMOKE_OK\n");
-                fflush(stdout);
-                return 0;
+                fprintf(stderr, "threadpool client main: unexpected BR_REPLY for one-way register\n");
+                return -1;
             }
 
             if (rcmd == BR_INCREFS || rcmd == BR_ACQUIRE || rcmd == BR_RELEASE || rcmd == BR_DECREFS) {
@@ -286,6 +276,20 @@ static int threadpool_client_register_callback(int fd, uint32_t service_handle) 
             return -1;
         }
     }
+
+    for (int i = 0; i < 500; i++) {
+        if (g_callback_seen.load() && g_callback_ok.load()) {
+            printf("ANDROID_LIKE_THREADPOOL_MAIN_OBSERVED_CALLBACK_OK\n");
+            printf("ANDROID_LIKE_THREADPOOL_SMOKE_OK\n");
+            fflush(stdout);
+            return 0;
+        }
+
+        usleep(10000);
+    }
+
+    fprintf(stderr, "threadpool client main: timeout waiting for callback looper marker\n");
+    return -1;
 }
 
 int main(int argc, char **argv) {

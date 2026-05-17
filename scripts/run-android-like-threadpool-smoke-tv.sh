@@ -86,7 +86,8 @@ grep -q 'ANDROID_LIKE_CALLBACK_HANDLE_OK' logs/android_like_threadpool_service.l
 grep -q 'ANDROID_LIKE_CALLBACK_REPLY_OK' logs/android_like_threadpool_service.log
 grep -q 'ANDROID_LIKE_THREADPOOL_CLIENT_LOOPER_READY' logs/android_like_threadpool_client.log
 grep -q 'ANDROID_LIKE_THREADPOOL_CALLBACK_THREAD_OK' logs/android_like_threadpool_client.log
-grep -q 'ANDROID_LIKE_THREADPOOL_MAIN_FINAL_REPLY_OK' logs/android_like_threadpool_client.log
+grep -q 'ANDROID_LIKE_THREADPOOL_ONEWAY_REGISTER_SENT' logs/android_like_threadpool_client.log
+grep -q 'ANDROID_LIKE_THREADPOOL_MAIN_OBSERVED_CALLBACK_OK' logs/android_like_threadpool_client.log
 grep -q 'ANDROID_LIKE_THREADPOOL_SMOKE_OK' logs/android_like_threadpool_client.log
 
 echo "ANDROID_LIKE_THREADPOOL_SMOKE_TV_OK"

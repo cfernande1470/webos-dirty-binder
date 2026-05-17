@@ -11,18 +11,19 @@ Milestone 7 proved:
 
 Milestone 8 proves:
 
-    client main thread registers callback
     client starts separate Binder looper thread
+    client main thread registers callback with TF_ONE_WAY
     service calls callback handle
     Binder delivers callback BR_TRANSACTION to looper thread
     looper thread replies
-    main thread receives final BR_REPLY
+    main thread observes callback completion marker
 
 Target markers:
 
     ANDROID_LIKE_THREADPOOL_CLIENT_LOOPER_READY
+    ANDROID_LIKE_THREADPOOL_ONEWAY_REGISTER_SENT
     ANDROID_LIKE_THREADPOOL_CALLBACK_THREAD_OK
-    ANDROID_LIKE_THREADPOOL_MAIN_FINAL_REPLY_OK
+    ANDROID_LIKE_THREADPOOL_MAIN_OBSERVED_CALLBACK_OK
     ANDROID_LIKE_THREADPOOL_SMOKE_OK
 
 Non-goals:
