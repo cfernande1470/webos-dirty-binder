@@ -212,3 +212,8 @@ echo "== build android_userspace_preflight =="
 "$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_userspace_preflight_static tools/android_userspace_preflight.cpp
 file build/android_userspace_preflight_static
 ls -lh build/android_userspace_preflight_static
+
+echo "== build fd_scm_rights_preflight =="
+"$LITE_CXX" -O2 -static -Wall -Wextra -o build/fd_scm_rights_preflight_static tools/fd_scm_rights_preflight.cpp
+file build/fd_scm_rights_preflight_static
+ls -lh build/fd_scm_rights_preflight_static
