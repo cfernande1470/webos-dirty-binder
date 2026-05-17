@@ -83,9 +83,11 @@ static int first_fd_from_transaction(struct binder_transaction_data *tr, int *ou
 
     obj = (struct flat_binder_object *)((uint8_t *)(uintptr_t)tr->data.ptr.buffer + off);
 
-    printf("fd-passing service object: offset=%" PRIu64 " type=0x%08x handle=%u binder=0x%" PRIx64 " cookie=0x%" PRIx64 "\n",
+    printf("fd-passing service object: sizeof(flat_binder_object)=%zu offset=%" PRIu64 " type=0x%08x flags=0x%08x handle=%u binder=0x%" PRIx64 " cookie=0x%" PRIx64 "\n",
+           sizeof(*obj),
            (uint64_t)off,
            obj->type,
+           obj->flags,
            obj->handle,
            (uint64_t)obj->binder,
            (uint64_t)obj->cookie);

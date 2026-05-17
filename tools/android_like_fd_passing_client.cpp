@@ -61,7 +61,13 @@ static int call_send_fd(
 
     memset(&obj, 0, sizeof(obj));
     obj.type = BINDER_TYPE_FD;
-    obj.flags = 0;
+
+    /*
+     * Some older Binder userspaces set FLAT_BINDER_FLAG_ACCEPTS_FDS even on
+     * BINDER_TYPE_FD objects. The previous obj.flags=0 variant returned
+     * BR_FAILED_REPLY before the service received the transaction.
+     */
+    obj.flags = FLAT_BINDER_FLAG_ACCEPTS_FDS;
     obj.handle = (uint32_t)pipefd[0];
     obj.cookie = 0;
 
@@ -82,6 +88,16 @@ static int call_send_fd(
     cmd = BC_TRANSACTION;
     cb_append_u32(&p, cmd);
     cb_append_bytes(&p, &tr, sizeof(tr));
+
+    printf("fd-passing client object: sizeof(flat_binder_object)=%zu offset=%llu type=0x%08x flags=0x%08x handle=%u cookie=0x%" PRIx64 " data_size=%zu offsets_size=%zu\n",
+           sizeof(obj),
+           (unsigned long long)offsets[0],
+           obj.type,
+           obj.flags,
+           obj.handle,
+           (uint64_t)obj.cookie,
+           parcel_size,
+           sizeof(offsets));
 
     printf("BINDER_FD_OBJECT_SENT label=%s payload=%s fd=%d\n",
            label,
