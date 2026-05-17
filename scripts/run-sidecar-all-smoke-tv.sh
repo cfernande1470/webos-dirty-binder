@@ -201,3 +201,10 @@ echo "== Android-like AIDL one-way concurrent stress smoke =="
 CLIENTS="${CLIENTS:-8}" ROUNDS="${ROUNDS:-250}" ./scripts/run-android-like-aidl-oneway-stress-tv.sh
 
 echo "AIDL_LIKE_ONEWAY_STRESS_V0_OK"
+
+
+echo "== Android userspace preflight smoke =="
+
+./scripts/run-android-userspace-preflight-tv.sh
+
+echo "ANDROID_USERSPACE_PREFLIGHT_V0_OK"
