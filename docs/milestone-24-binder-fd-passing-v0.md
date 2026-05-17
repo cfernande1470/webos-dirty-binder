@@ -1,43 +1,49 @@
 # Milestone 24: Binder FD passing v0
 
-Goal: prove file descriptor passing through Binder.
+Status: **QUARANTINED**
 
-Milestone 23 proved:
-
-    getChild() returns unique Binder objects
-    each object has exact BR_RELEASE / BR_DECREFS lifecycle
-    32 clients passed with exact object cleanup
-
-Milestone 24 proves:
+Goal was to prove file descriptor passing through Binder:
 
     client creates a pipe
     client writes payload into pipe
     client passes read-fd through Binder as BINDER_TYPE_FD
     service receives translated local fd
-    service reads payload from received fd
-    service replies with AIDL-like exception code + String16 result
-    client validates result
-    repeated FD passing works
+    service reads payload
+    service replies
 
-Default:
+Observed result on LG webOS Binder 4.4 sidecar:
 
-    ROUNDS=16
+    client sends BINDER_TYPE_FD
+    kernel returns BR_FAILED_REPLY
+    service never receives the FD transaction
+    TV reboot was observed during/after the experiment
 
-Target markers:
+Evidence:
 
-    BINDER_FD_SERVICE_REGISTERED
-    BINDER_FD_OBJECT_SENT
-    BINDER_FD_RECEIVED_OK
-    BINDER_FD_READ_OK
-    BINDER_FD_CLIENT_ROUND_OK
-    BINDER_FD_CLIENT_SMOKE_OK
-    BINDER_FD_SMOKE_TV_OK
+    client emitted BINDER_FD_OBJECT_SENT
+    client received BR_FAILED_REPLY
+    service emitted BINDER_FD_SERVICE_REGISTERED
+    service only received ServiceManager PING
+    service did not receive FD transaction
 
-Non-goals:
+Interpretation:
 
-    no ashmem
-    no memfd
-    no Parcelable
-    no Java framework
-    no Android rootfs
-    no SELinux policy
+    FD passing is not proven safe on this Binder driver/build.
+    It may be unsupported, disabled, ABI-mismatched, or triggering a kernel-side fault.
+    Do not run this smoke by default.
+
+Policy:
+
+    run-binder-fd-passing-tv.sh is guarded.
+    It will not send BINDER_TYPE_FD unless explicitly enabled with:
+
+        BINDER_FD_PASSING_UNSAFE=1
+
+Target marker for quarantine:
+
+    BINDER_FD_PASSING_QUARANTINED
+
+Next safe direction:
+
+    continue Android compatibility milestones that do not pass file descriptors
+    revisit FD passing only after collecting kernel crash logs / pstore / dmesg

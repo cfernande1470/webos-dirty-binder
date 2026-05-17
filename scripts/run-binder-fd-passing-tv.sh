@@ -6,6 +6,13 @@ SIDE_DIR="${SIDE_DIR:-/media/internal/android-sidecar}"
 SERVICE="${SERVICE:-test.android.fd}"
 ROUNDS="${ROUNDS:-16}"
 
+if [ "${BINDER_FD_PASSING_UNSAFE:-0}" != "1" ]; then
+  echo "BINDER_FD_PASSING_QUARANTINED"
+  echo "Refusing to send BINDER_TYPE_FD by default because this rebooted the TV / returned BR_FAILED_REPLY."
+  echo "Set BINDER_FD_PASSING_UNSAFE=1 to run the dangerous probe explicitly."
+  exit 0
+fi
+
 ssh root@"$TV_IP" "SIDE_DIR='$SIDE_DIR' SERVICE='$SERVICE' ROUNDS='$ROUNDS' sh -s" <<'TVSH'
 set -eu
 

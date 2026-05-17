@@ -1,0 +1,222 @@
+== date ==
+Sun May 17 22:10:32 CEST 2026
+== uptime ==
+ 22:10:32 up 1 min,  0 users,  load average: 15.99, 5.52, 1.97
+90.89 113.50
+
+== uname ==
+Linux LGwebOSTV 4.4.84-229.1.kavir.2 #1 SMP PREEMPT Mon Jan 17 08:08:42 UTC 2022 aarch64 GNU/Linux
+
+== binder device ==
+
+== sidecar logs ==
+
+===== logs/binder_fd_client.log =====
+
+===== logs/binder_fd_service.log =====
+
+===== logs/binder_fd_sm.log =====
+
+== dmesg tail ==
+[   52.289578] systemd[1]: Started starfish - "dmost.service".
+[   52.293067] systemd[1]: Started starfish - "preload-manager.service".
+[   52.296426] systemd[1]: Started default - "musicrecognition.service".
+[   52.302082] systemd[1]: Started starfish - "bluetooth-dot-service.service".
+[   52.314687] systemd[1]: Starting webos - "nyx-utils.service"...
+[   52.318019] systemd[1]: Started default - "livepick.service".
+[   52.321213] systemd[1]: Starting starfish - "user-context-manager.service"...
+[   52.326424] systemd[2591]: bluetooth-dot-service.service: Executable /usr/sbin/bluetooth-dot-service missing, skipping: No such file or directory
+[   52.331545] systemd[1]: Started default - "uploadd.service".
+[   52.332099] systemd[1]: Started starfish - "instant-boot-done.path".
+[   52.336771] systemd[1]: Started starfish - "miracast-tx.service".
+[   52.340775] systemd[1]: Started webos - "ocp.service".
+[   52.345856] systemd[1]: Starting starfish - "criu_copy_img.service"...
+[   52.358682] systemd[1]: Started starfish - "aiservice.service".
+[   52.370080] systemd[1]: Started starfish - "miracast.service".
+[   52.391371] systemd[1]: Starting starfish - "com.webos.app.partialview.service"...
+[   52.448462] systemd[1]: Started default - "lebo.service".
+[   52.501969] criu images copy to second dir(emmc)! is started!
+[   52.522370] systemd[1]: Started starfish - "klog-formatter.service".
+[   52.756984] systemd[1]: livepick.service: Main process exited, code=exited, status=255/n/a
+[   52.757925] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   52.757936] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   52.757952] systemd[1]: livepick.service: Failed with result 'exit-code'.
+[   52.804851] systemd[1]: Started starfish - "com.webos.app.partialview.service".
+[   52.921703] systemd[1]: Started webos - "iepg-ping-fepg.service".
+[   52.922470] systemd[1]: livepick.service: Service RestartSec=100ms expired, scheduling restart.
+[   52.923868] systemd[1]: livepick.service: Scheduled restart job, restart counter is at 1.
+[   52.923991] systemd[1]: Stopped default - "livepick.service".
+[   52.936539] systemd[1]: Started default - "livepick.service".
+[   53.179007] systemd[1]: livepick.service: Main process exited, code=exited, status=255/n/a
+[   53.179493] systemd[1]: livepick.service: Failed with result 'exit-code'.
+[   53.348148] systemd[1]: livepick.service: Service RestartSec=100ms expired, scheduling restart.
+[   53.348799] systemd[1]: livepick.service: Scheduled restart job, restart counter is at 2.
+[   53.348864] systemd[1]: Stopped default - "livepick.service".
+[   53.388453] systemd[1]: Started default - "livepick.service".
+[   53.388929] systemd[1]: Started starfish - "user-context-manager.service".
+[   53.393395] systemd[1]: Started starfish - "nudge.service".
+[   53.505426] systemd[1]: livepick.service: Main process exited, code=exited, status=255/n/a
+[   53.506026] systemd[1]: livepick.service: Failed with result 'exit-code'.
+[   53.527511] criu created symbolic link! ( pages-1.img )
+[   53.549811] systemd[1]: Started webos - "nyx-utils.service".
+[   53.578754] systemd[1]: Started webos - "second-screen-gateway.service".
+[   53.610971] systemd[1]: livepick.service: Service RestartSec=100ms expired, scheduling restart.
+[   53.611620] systemd[1]: livepick.service: Scheduled restart job, restart counter is at 3.
+[   53.611699] systemd[1]: Stopped default - "livepick.service".
+[   53.616082] systemd[1]: Started default - "livepick.service".
+[   53.757968] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   53.757972] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   53.761123] systemd[1]: livepick.service: Main process exited, code=exited, status=255/n/a
+[   53.761635] systemd[1]: livepick.service: Failed with result 'exit-code'.
+[   53.870497] criu images hashes are different !!.. will be deleted
+[   54.006536] systemd[1]: livepick.service: Service RestartSec=100ms expired, scheduling restart.
+[   54.007164] systemd[1]: livepick.service: Scheduled restart job, restart counter is at 4.
+[   54.007246] systemd[1]: Stopped default - "livepick.service".
+[   54.026864] criu created symbolic link! ( pages-1.img )
+[   54.048471] systemd[1]: Started default - "livepick.service".
+[   54.089906] criu images copy( error ) is skipped to second dir(emmc)!
+[   54.089981] criu images copy( manager_pid ) is skipped to second dir(emmc)!
+[   54.095641] systemd[1]: Starting webos-pro - "bootmode-normal-boot-done.service"...
+[   54.121453] systemd[1]: livepick.service: Main process exited, code=exited, status=255/n/a
+[   54.121975] systemd[1]: livepick.service: Failed with result 'exit-code'.
+[   54.136519] criu images copy completed to second dir(emmc)!
+[   54.139370] systemd[1]: Started starfish - "criu_copy_img.service".
+[   54.142451] systemd[1]: Reached target "webos-bd.target".
+[   54.156879] systemd[1]: Started webos - "second-screen-gateway.service".
+[   54.256602] systemd[1]: livepick.service: Service RestartSec=100ms expired, scheduling restart.
+[   54.257263] systemd[1]: livepick.service: Scheduled restart job, restart counter is at 5.
+[   54.257357] systemd[1]: Stopped default - "livepick.service".
+[   54.257405] systemd[1]: livepick.service: Start request repeated too quickly.
+[   54.257412] systemd[1]: livepick.service: Failed with result 'exit-code'.
+[   54.257431] systemd[1]: Failed to start default - "livepick.service".
+[   54.757953] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   54.757957] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   55.758734] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   55.758739] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   56.757916] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   56.757920] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   57.622077] fbdev        NOT (01873:01873) FBDEV_ioctl              1324: FBEXTIO_PUT_INPUTBUFFER_RESOLUTION size=1280x0720
+[   57.712143] alsa_sndout  NOT (01827:01827) convert_type              394: from COMMON_SPK(0x1) --> to LX_AUD_MASTER_OUTPUT_SPEAKER(0x0)
+[   57.712178] alsa_sndout  NOT (01827:01827) sndout_disconnect        1533: output 0x1 input 0x1 portnumber 1 .
+[   57.716553] de           NOT (02406:02406) v4l2_vsc_vidioc_s_ext_ctrls 1111: vsc:id 0x982911 (V4L2_CID_EXT_VSC_ORBIT_WINDOW)
+[   57.718084] de           NOT (02406:02406) vsc_set_orbit_window     1394: win0: vi[0x0(0,0)] oi[1920x1080(0,0)] vo[0x0(0,0)] oo[3860x2170(0,0)]
+[   57.718209] de           NOT (02406:02406) v4l2_vsc_vidioc_s_ext_ctrls 1111: vsc:id 0x982912 (V4L2_CID_EXT_VSC_ORBIT_MOVE)
+[   57.722766] de           NOT (02406:02406) vsc_set_orbit_move       1437: win0: vi[0x0(0,0)] oi[3840x2160(10,5)] vo[0x0(0,0)] oo[3840x2160(0,0)]
+[   57.723560] pe           NOT (02414:02414) vpq_set_ext_ctrl_cmn      240: setpqmodeinfo: v:1,l:20,w:0, 0,0,1000,0,0
+[   57.723619] de           NOT (02414:02414) DE_IO_SetIPCHDRMode      3379: [CMD:0x00000061]wid:0,ipc:0,from:2, DE:0,PE:0 -> 0
+[   57.723649] pe           NOT (02414:02414) KWRAP_PE_HDR_SetOpModeInfo 6494: [0]t:cc(0,0,0,0,0,0,0,1000)<-(0,0,0,1,0,0,0,1000)
+[   57.723664] pe           NOT (02414:02414) PE_HDR_HW_O20_SetModeInfo 5165: [MI0]co(c)/ht,hc/cl,of,sp,if:0(0)/0,0/0,0,0,0
+[   57.725084] aibsp_interf NOT (02782:02782) AIBSP_SetNnParam          164: AIBSP_SQM_HALF_ON
+[   57.727067] aibsp_interf NOT (02782:02782) AIBSP_SetNnParam          186: AIBSP_GENRE_OFF
+[   57.728676] pe           NOT (02414:02414) vpq_set_ext_ctrl_be       895: v:1,l:32,wid:0, gl v:1,sn:1,p:000000000075bbdc, ai s:28,p:00000000ffb1b2a4
+[   57.730227] pe           NOT (02414:02414) vpq_set_ext_ctrl_be       982: s:28, iv:0x00, id:1,0,2,0, [1] en:0, cp:0, c,b,s:512,512,128
+[   57.731354] alsa_sndout  NOT (01827:01827) sndout_gain_input        2055: input 0x1 Port 1 Gain 8388608.
+[   57.757949] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   57.757965] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   57.781944] pe           NOT (02414:02488) v4l2_vpq_vidioc_g_ctrl_latency  817: Panel:1, Input:7, Scan:0, Vfreq:0, Lowdelay:0 --> latency:0 ms
+[   58.758113] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   58.758128] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   58.957721] [wlan][3620]halRxMonitor:(HAL STATE) halRxMonitor: periodic check
+[   58.957734] [wlan][3620]halRxMonitor:(HAL STATE) in_urb_submit#: 117
+[   58.957738] [wlan][3620]halRxMonitor:(HAL STATE) in_urb_complete#: 113
+[   58.957742] [wlan][3620]halRxMonitor:(HAL STATE) in_urb_fail#: 0
+[   58.957747] [wlan][3620]halRxMonitor:(HAL STATE) urb in RxDataFreeQ#: 0
+[   58.957751] [wlan][3620]halRxMonitor:(HAL STATE) urb in RxDataCompleteQ#: 0
+[   59.757987] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   59.758001] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   60.391501] systemd[1]: Started webos-pro - "bootmode-normal-boot-done.service".
+[   60.757958] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   60.757972] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   61.650238] [wlan][2784]mtk_p2p_cfg80211_remain_on_channel:(P2P EVENT) [81] 2462
+[   61.757925] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   61.757940] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   62.757915] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   62.757930] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   63.757888] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   63.757902] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   64.757954] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   64.757968] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   65.757902] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   65.757926] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   66.757900] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   66.757914] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   67.758120] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   67.758155] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   68.757943] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   68.757958] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   68.957732] [wlan][3620]halRxMonitor:(HAL STATE) halRxMonitor: periodic check
+[   68.957744] [wlan][3620]halRxMonitor:(HAL STATE) in_urb_submit#: 137
+[   68.957748] [wlan][3620]halRxMonitor:(HAL STATE) in_urb_complete#: 133
+[   68.957752] [wlan][3620]halRxMonitor:(HAL STATE) in_urb_fail#: 0
+[   68.957757] [wlan][3620]halRxMonitor:(HAL STATE) urb in RxDataFreeQ#: 0
+[   68.957760] [wlan][3620]halRxMonitor:(HAL STATE) urb in RxDataCompleteQ#: 0
+[   69.757912] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   69.757916] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   70.627729] O20 CPU Governor Start!
+[   70.758075] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   70.758090] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   71.653455] [wlan][2784]mtk_p2p_cfg80211_remain_on_channel:(P2P EVENT) [101] 2462
+[   71.757910] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   71.757925] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   72.758303] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   72.758325] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   73.757908] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   73.757921] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   74.757950] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   74.757968] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   75.757905] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   75.757919] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   76.757911] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   76.757925] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   77.758369] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   77.758383] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   78.445218] hid-generic 0005:000F:3412.0002: No inputs registered, leaving
+[   78.445932] hid-generic 0005:000F:3412.0002: hidraw0: BLUETOOTH HID v0.00 Device [LGE MR21N] on B0:4B:BF:DC:85:21
+[   78.758552] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   78.758566] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   78.957727] [wlan][3620]halRxMonitor:(HAL STATE) halRxMonitor: periodic check
+[   78.957740] [wlan][3620]halRxMonitor:(HAL STATE) in_urb_submit#: 157
+[   78.957745] [wlan][3620]halRxMonitor:(HAL STATE) in_urb_complete#: 153
+[   78.957749] [wlan][3620]halRxMonitor:(HAL STATE) in_urb_fail#: 0
+[   78.957753] [wlan][3620]halRxMonitor:(HAL STATE) urb in RxDataFreeQ#: 0
+[   78.957757] [wlan][3620]halRxMonitor:(HAL STATE) urb in RxDataCompleteQ#: 0
+[   79.757924] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   79.757939] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   80.757915] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   80.757918] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   81.662305] [wlan][2784]mtk_p2p_cfg80211_remain_on_channel:(P2P EVENT) [121] 2462
+[   81.757972] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   81.757988] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   82.757890] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   82.757904] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   83.757934] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   83.757949] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   84.757937] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   84.757952] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   85.757928] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   85.757942] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   86.757942] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   86.757946] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   87.757933] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   87.757949] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   87.948999] systemd[1]: Stopping starfish - "preload-manager.service"...
+[   87.953196] systemd[1]: Stopped starfish - "preload-manager.service".
+[   87.980510] systemd[1]: Stopping default - "voiceinput.service"...
+[   87.998014] systemd[1]: Stopped default - "voiceinput.service".
+[   88.022231] systemd[1]: Stopping starfish - "voiceconductor.service"...
+[   88.066869] systemd[1]: Stopped starfish - "voiceconductor.service".
+[   88.757919] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   88.757933] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   88.957748] [wlan][3620]halRxMonitor:(HAL STATE) halRxMonitor: periodic check
+[   88.957761] [wlan][3620]halRxMonitor:(HAL STATE) in_urb_submit#: 177
+[   88.957765] [wlan][3620]halRxMonitor:(HAL STATE) in_urb_complete#: 173
+[   88.957769] [wlan][3620]halRxMonitor:(HAL STATE) in_urb_fail#: 0
+[   88.957774] [wlan][3620]halRxMonitor:(HAL STATE) urb in RxDataFreeQ#: 0
+[   88.957778] [wlan][3620]halRxMonitor:(HAL STATE) urb in RxDataCompleteQ#: 0
+[   89.757936] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   89.757950] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+[   90.495249] dev:vdec, message : [   79.271623] random: nonblocking pool is initialized
+[   90.757882] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: curr(0) last(0)
+[   90.757895] Sunplus Fast Ethernet Transceiver stmmac-0:01: ADJ_ADC: schedule
+
+== last_kmsg / pstore if present ==

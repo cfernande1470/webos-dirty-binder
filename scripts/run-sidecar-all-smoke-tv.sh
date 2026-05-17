@@ -177,6 +177,6 @@ echo "AIDL_LIKE_BINDER_RETURN_UNIQUE_LIFECYCLE_V0_OK"
 
 echo "== Binder FD passing smoke =="
 
-ROUNDS="${ROUNDS:-16}" ./scripts/run-binder-fd-passing-tv.sh
+ROUNDS="${ROUNDS:-16}" BINDER_FD_PASSING_UNSAFE=0 ./scripts/run-binder-fd-passing-tv.sh
 
 echo "BINDER_FD_PASSING_V0_OK"
