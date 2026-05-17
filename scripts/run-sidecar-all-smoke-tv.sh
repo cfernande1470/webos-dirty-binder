@@ -180,3 +180,10 @@ echo "== Binder FD passing smoke =="
 ROUNDS="${ROUNDS:-16}" BINDER_FD_PASSING_UNSAFE=0 ./scripts/run-binder-fd-passing-tv.sh
 
 echo "BINDER_FD_PASSING_V0_OK"
+
+
+echo "== Binder Android PING_TRANSACTION smoke =="
+
+./scripts/run-binder-ping-transaction-tv.sh
+
+echo "BINDER_PING_TRANSACTION_V0_OK"

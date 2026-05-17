@@ -102,6 +102,24 @@ static int aidl_like_process_transaction(int fd, struct binder_transaction_data 
     if (tr->code == AIDL_LIKE_INTERFACE_TRANSACTION)
         return aidl_like_send_descriptor_reply(fd, tr);
 
+    if (tr->code == AIDL_LIKE_ANDROID_PING_TRANSACTION) {
+        uint8_t reply[4];
+        size_t pos = 0;
+
+        if (cb_parcel_write_i32(reply, sizeof(reply), &pos, 0) != 0)
+            return -1;
+
+        printf("aidl-like service: handled Android PING_TRANSACTION\n");
+        printf("BINDER_PING_TRANSACTION_OK\n");
+        fflush(stdout);
+
+        return aidl_like_send_reply_parcel(fd,
+                                           tr->data.ptr.buffer,
+                                           reply,
+                                           pos,
+                                           "aidl-like android ping reply");
+    }
+
     if (tr->code == AIDL_LIKE_PING) {
         printf("aidl-like service: handled PING\n");
         fflush(stdout);
@@ -222,6 +240,7 @@ int main(int argc, char **argv) {
 
     printf("AIDL_LIKE_SERVICE_REGISTERED\n");
     printf("BINDER_META_SERVICE_REGISTERED\n");
+    printf("BINDER_PING_SERVICE_REGISTERED\n");
     fflush(stdout);
 
     return aidl_like_service_loop(fd) == 0 ? 0 : 1;

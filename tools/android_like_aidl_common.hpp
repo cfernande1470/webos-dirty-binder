@@ -16,6 +16,12 @@
  */
 #define AIDL_LIKE_INTERFACE_TRANSACTION 0x5f4e5446U
 
+/*
+ * Android IBinder meta transaction:
+ * PING_TRANSACTION = '_PNG' = 0x5f504e47
+ */
+#define AIDL_LIKE_ANDROID_PING_TRANSACTION 0x5f504e47U
+
 struct aidl_like_reader {
     const uint8_t *data;
     size_t size;
