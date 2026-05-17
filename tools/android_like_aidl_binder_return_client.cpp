@@ -298,6 +298,17 @@ int main(int argc, char **argv) {
     printf("AIDL_LIKE_BINDER_RETURN_CHILD_CALL_OK\n");
 
     cb_binder_release_handle(fd, child_handle, "binder-return client release child");
+
+    /*
+     * The returned Binder handle carries both strong and weak refs.
+     * BC_RELEASE drops the strong ref; BC_DECREFS drops the weak ref so the
+     * service can observe both BR_RELEASE and BR_DECREFS for lifecycle tests.
+     */
+    cb_binder_send_handle_cmd(fd,
+                              BC_DECREFS,
+                              child_handle,
+                              "binder-return client decrefs child");
+
     cb_binder_release_handle(fd, factory_handle, "binder-return client release factory");
 
     printf("AIDL_LIKE_BINDER_RETURN_CLIENT_SMOKE_OK\n");
