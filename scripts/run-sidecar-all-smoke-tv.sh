@@ -96,3 +96,10 @@ echo "== Android-like AIDL service recovery smoke =="
 CYCLES="${CYCLES:-5}" ROUNDS="${ROUNDS:-10}" ./scripts/run-android-like-aidl-recovery-tv.sh
 
 echo "AIDL_LIKE_RECOVERY_V0_OK"
+
+
+echo "== Android-like AIDL stale handle recovery smoke =="
+
+CLIENT_SLEEP="${CLIENT_SLEEP:-8}" ./scripts/run-android-like-aidl-stale-handle-tv.sh
+
+echo "AIDL_LIKE_STALE_HANDLE_V0_OK"
