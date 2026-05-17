@@ -173,3 +173,10 @@ echo "== Android-like AIDL unique Binder return lifecycle smoke =="
 CLIENTS="${CLIENTS:-16}" ./scripts/run-android-like-aidl-unique-binder-return-tv.sh
 
 echo "AIDL_LIKE_BINDER_RETURN_UNIQUE_LIFECYCLE_V0_OK"
+
+
+echo "== Binder FD passing smoke =="
+
+ROUNDS="${ROUNDS:-16}" ./scripts/run-binder-fd-passing-tv.sh
+
+echo "BINDER_FD_PASSING_V0_OK"

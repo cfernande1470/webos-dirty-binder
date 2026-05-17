@@ -182,3 +182,13 @@ echo "== build android_like_aidl_binder_return_client =="
 "$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_binder_return_client_static tools/android_like_aidl_binder_return_client.cpp
 file build/android_like_aidl_binder_return_client_static
 ls -lh build/android_like_aidl_binder_return_client_static
+
+echo "== build android_like_fd_passing_service =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_fd_passing_service_static tools/android_like_fd_passing_service.cpp
+file build/android_like_fd_passing_service_static
+ls -lh build/android_like_fd_passing_service_static
+
+echo "== build android_like_fd_passing_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_fd_passing_client_static tools/android_like_fd_passing_client.cpp
+file build/android_like_fd_passing_client_static
+ls -lh build/android_like_fd_passing_client_static
