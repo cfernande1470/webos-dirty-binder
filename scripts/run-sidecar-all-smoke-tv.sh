@@ -131,3 +131,10 @@ echo "== Android-like AIDL listener unregister smoke =="
 CLIENTS="${CLIENTS:-8}" ./scripts/run-android-like-aidl-listener-unregister-tv.sh
 
 echo "AIDL_LIKE_LISTENER_UNREGISTER_V0_OK"
+
+
+echo "== Android-like AIDL negative/error semantics smoke =="
+
+./scripts/run-android-like-aidl-negative-tv.sh
+
+echo "AIDL_LIKE_NEGATIVE_V0_OK"
