@@ -4,17 +4,18 @@ Goal: prove reverse Binder calls on LG webOS.
 
 Flow:
 
-    client process owns local callback Binder object
+    client owns local callback Binder object
     client calls service.registerCallback(callback)
-    service receives callback as Binder handle
-    service calls callback.onEchoEvent(...)
-    client receives BR_TRANSACTION
+    service receives callback as BINDER_TYPE_HANDLE
+    service transacts back into callback
+    client receives BR_TRANSACTION while waiting for original BR_REPLY
     client replies
-    service receives BR_REPLY
-    smoke test validates lifecycle
+    service receives callback BR_REPLY
+    service replies to original client call
 
 Target markers:
 
+    ANDROID_LIKE_CALLBACK_SERVICE_REGISTERED
     ANDROID_LIKE_CALLBACK_REGISTER_OK
     ANDROID_LIKE_CALLBACK_HANDLE_OK
     ANDROID_LIKE_CALLBACK_TRANSACTION_OK
@@ -23,9 +24,8 @@ Target markers:
 
 Non-goals:
 
-    no full Android userspace
     no zygote
-    no PackageManager
-    no SELinux policy
     no Java framework
-    no persistent system partition writes
+    no SELinux policy
+    no Android rootfs
+    no partition writes
