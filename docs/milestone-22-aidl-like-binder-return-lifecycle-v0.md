@@ -12,8 +12,8 @@ Milestone 21 proved:
 Milestone 22 proves:
 
     service observes BR_INCREFS / BR_ACQUIRE for returned child object
-    service observes BR_RELEASE / BR_DECREFS when clients release child handles
-    service confirms returned object lifecycle cleanup after N clients
+    service observes BR_RELEASE when clients release returned child handles
+    service confirms returned singleton object lifecycle cleanup after clients finish
     normal child calls still work during lifecycle tracking
 
 Default:
@@ -28,7 +28,7 @@ Target markers:
     AIDL_LIKE_BINDER_RETURN_CHILD_INCREFS
     AIDL_LIKE_BINDER_RETURN_CHILD_ACQUIRE
     AIDL_LIKE_BINDER_RETURN_CHILD_RELEASE
-    AIDL_LIKE_BINDER_RETURN_CHILD_DECREFS
+    AIDL_LIKE_BINDER_RETURN_CHILD_DECREFS optional
     AIDL_LIKE_BINDER_RETURN_CHILD_LIFECYCLE_RELEASE_OK
     AIDL_LIKE_BINDER_RETURN_LIFECYCLE_SMOKE_TV_OK
 

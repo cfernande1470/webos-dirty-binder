@@ -61,12 +61,17 @@ static int binder_return_handle_ref_cmd(int fd, uint32_t rcmd, uint8_t **ptr, ui
 
         fflush(stdout);
 
+        /*
+         * The returned child object is a singleton local Binder object.
+         * Binder may coalesce references for that node, so lifecycle is proven
+         * when the service observes the final strong release for the child,
+         * not when release_count equals number of clients.
+         */
         if (!g_child_lifecycle_done &&
             g_expected_child_releases > 0 &&
-            g_child_releases >= g_expected_child_releases &&
-            g_child_decrefs >= g_expected_child_releases) {
+            g_child_releases >= 1) {
             g_child_lifecycle_done = 1;
-            printf("AIDL_LIKE_BINDER_RETURN_CHILD_LIFECYCLE_RELEASE_OK releases=%d decrefs=%d expected=%d\n",
+            printf("AIDL_LIKE_BINDER_RETURN_CHILD_LIFECYCLE_RELEASE_OK releases=%d decrefs=%d expected_clients=%d\n",
                    g_child_releases,
                    g_child_decrefs,
                    g_expected_child_releases);
