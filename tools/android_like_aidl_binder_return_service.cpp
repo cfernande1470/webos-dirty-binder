@@ -21,6 +21,78 @@ static const binder_uintptr_t kReturnedChildPtr =
 static const binder_uintptr_t kReturnedChildCookie =
     (binder_uintptr_t)0x52455443484b3030ULL; /* RETCHK00 */
 
+static int g_expected_child_releases = 0;
+static int g_child_increfs = 0;
+static int g_child_acquires = 0;
+static int g_child_releases = 0;
+static int g_child_decrefs = 0;
+static int g_child_lifecycle_done = 0;
+
+static int binder_return_handle_ref_cmd(int fd, uint32_t rcmd, uint8_t **ptr, uint8_t *end) {
+    struct binder_ptr_cookie pc;
+
+    if (*ptr + sizeof(pc) > end) {
+        fprintf(stderr, "binder-return service: truncated ref cmd=0x%08x\n", rcmd);
+        return -1;
+    }
+
+    memcpy(&pc, *ptr, sizeof(pc));
+    *ptr += sizeof(pc);
+
+    printf("binder-return service ref cmd=%s ptr=0x%" PRIx64 " cookie=0x%" PRIx64 "\n",
+           cb_cmd_name(rcmd),
+           (uint64_t)pc.ptr,
+           (uint64_t)pc.cookie);
+
+    if (pc.ptr == kReturnedChildPtr && pc.cookie == kReturnedChildCookie) {
+        if (rcmd == BR_INCREFS) {
+            g_child_increfs++;
+            printf("AIDL_LIKE_BINDER_RETURN_CHILD_INCREFS count=%d\n", g_child_increfs);
+        } else if (rcmd == BR_ACQUIRE) {
+            g_child_acquires++;
+            printf("AIDL_LIKE_BINDER_RETURN_CHILD_ACQUIRE count=%d\n", g_child_acquires);
+        } else if (rcmd == BR_RELEASE) {
+            g_child_releases++;
+            printf("AIDL_LIKE_BINDER_RETURN_CHILD_RELEASE count=%d\n", g_child_releases);
+        } else if (rcmd == BR_DECREFS) {
+            g_child_decrefs++;
+            printf("AIDL_LIKE_BINDER_RETURN_CHILD_DECREFS count=%d\n", g_child_decrefs);
+        }
+
+        fflush(stdout);
+
+        if (!g_child_lifecycle_done &&
+            g_expected_child_releases > 0 &&
+            g_child_releases >= g_expected_child_releases &&
+            g_child_decrefs >= g_expected_child_releases) {
+            g_child_lifecycle_done = 1;
+            printf("AIDL_LIKE_BINDER_RETURN_CHILD_LIFECYCLE_RELEASE_OK releases=%d decrefs=%d expected=%d\n",
+                   g_child_releases,
+                   g_child_decrefs,
+                   g_expected_child_releases);
+            fflush(stdout);
+        }
+    }
+
+    if (rcmd == BR_INCREFS || rcmd == BR_ACQUIRE) {
+        uint8_t writebuf[64];
+        uint8_t *p = writebuf;
+        uint32_t done = (rcmd == BR_INCREFS) ? BC_INCREFS_DONE : BC_ACQUIRE_DONE;
+
+        cb_append_u32(&p, done);
+        cb_append_bytes(&p, &pc, sizeof(pc));
+
+        return cb_binder_write_read(fd,
+                                    writebuf,
+                                    (size_t)(p - writebuf),
+                                    NULL,
+                                    0,
+                                    "binder-return service ref done") < 0 ? -1 : 0;
+    }
+
+    return 0;
+}
+
 static int write_token(uint8_t *buf, size_t cap, size_t *pos, const char *descriptor) {
     if (cb_parcel_write_i32(buf, cap, pos, 0) != 0)
         return -1;
@@ -289,7 +361,7 @@ static int service_loop(int fd) {
             }
 
             if (rcmd == BR_INCREFS || rcmd == BR_ACQUIRE || rcmd == BR_RELEASE || rcmd == BR_DECREFS) {
-                if (cb_handle_ref_cmd(fd, rcmd, &ptr, end, "binder-return service") != 0)
+                if (binder_return_handle_ref_cmd(fd, rcmd, &ptr, end) != 0)
                     return -1;
 
                 continue;
@@ -313,6 +385,9 @@ int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     setvbuf(stderr, NULL, _IOLBF, 0);
 
+    if (argc > 2)
+        g_expected_child_releases = atoi(argv[2]);
+
     fd = cb_binder_open_and_init("binder-return service");
 
     if (fd < 0)
@@ -325,6 +400,8 @@ int main(int argc, char **argv) {
         return 1;
 
     printf("AIDL_LIKE_BINDER_RETURN_SERVICE_REGISTERED\n");
+    printf("AIDL_LIKE_BINDER_RETURN_LIFECYCLE_SERVICE_REGISTERED expected=%d\n",
+           g_expected_child_releases);
     fflush(stdout);
 
     return service_loop(fd) == 0 ? 0 : 1;

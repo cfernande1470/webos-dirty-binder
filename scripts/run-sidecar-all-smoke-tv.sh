@@ -159,3 +159,10 @@ echo "== Android-like AIDL Binder return object stress smoke =="
 CLIENTS="${CLIENTS:-16}" ./scripts/run-android-like-aidl-binder-return-stress-tv.sh
 
 echo "AIDL_LIKE_BINDER_RETURN_STRESS_V0_OK"
+
+
+echo "== Android-like AIDL Binder return object lifecycle smoke =="
+
+CLIENTS="${CLIENTS:-16}" ./scripts/run-android-like-aidl-binder-return-lifecycle-tv.sh
+
+echo "AIDL_LIKE_BINDER_RETURN_LIFECYCLE_V0_OK"
