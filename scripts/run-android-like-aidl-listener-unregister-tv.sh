@@ -132,7 +132,7 @@ while [ "$i" -le "$CLIENTS" ]; do
   grep -q 'AIDL_LIKE_LISTENER_REGISTRY_THREAD_OK' "$log" || fail=1
   grep -q 'AIDL_LIKE_LISTENER_REGISTRY_CLIENT_BROADCAST_OK' "$log" || fail=1
   grep -q 'AIDL_LIKE_LISTENER_UNREGISTER_REQUEST_SENT' "$log" || fail=1
-  grep -q 'AIDL_LIKE_LISTENER_UNREGISTER_REPLY_OK' "$log" || fail=1
+  grep -q 'AIDL_LIKE_LISTENER_UNREGISTER_ONEWAY_SENT' "$log" || fail=1
   grep -q 'AIDL_LIKE_LISTENER_UNREGISTER_CLIENT_SMOKE_OK' "$log" || fail=1
 
   if grep -q 'AIDL_LIKE_LISTENER_REGISTRY_MAIN_GOT_CALLBACK_FAIL' "$log"; then

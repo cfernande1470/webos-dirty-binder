@@ -496,12 +496,19 @@ static int process_unregister_listener(int fd, struct binder_transaction_data *t
            g_expected_listeners);
     fflush(stdout);
 
-    if (send_string_reply(fd,
-                          tr->data.ptr.buffer,
-                          0,
-                          "listener unregistered",
-                          "registry service unregister reply") != 0)
-        return -1;
+    if (tr->flags & TF_ONE_WAY) {
+        if (cb_binder_free_buffer(fd,
+                                  tr->data.ptr.buffer,
+                                  "registry service free oneway unregister") != 0)
+            return -1;
+    } else {
+        if (send_string_reply(fd,
+                              tr->data.ptr.buffer,
+                              0,
+                              "listener unregistered",
+                              "registry service unregister reply") != 0)
+            return -1;
+    }
 
     if (g_unregister_count >= g_expected_listeners) {
         printf("AIDL_LIKE_LISTENER_UNREGISTER_ALL_OK\n");
