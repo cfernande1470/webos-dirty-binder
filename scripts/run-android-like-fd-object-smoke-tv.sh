@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "ERROR: Binder FD object smoke is quarantined because it can freeze/reboot the TV."
+echo "Use SCM_RIGHTS FD bridge instead."
+exit 99
+
+#!/usr/bin/env bash
+set -euo pipefail
+
 TV_IP="${TV_IP:-192.168.2.121}"
 SIDE_DIR="${SIDE_DIR:-/media/internal/android-sidecar}"
 SERVICE="${SERVICE:-test.android.fdobject}"
