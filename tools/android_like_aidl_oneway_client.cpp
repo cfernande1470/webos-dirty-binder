@@ -233,6 +233,10 @@ int main(int argc, char **argv) {
     int fd;
     uint32_t service_handle = 0;
     int32_t count = 0;
+    int expect_at_least = 0;
+
+    if (argc > 3 && strcmp(argv[3], "--expect-at-least") == 0)
+        expect_at_least = 1;
 
     setvbuf(stdout, NULL, _IOLBF, 0);
     setvbuf(stderr, NULL, _IOLBF, 0);
@@ -261,7 +265,14 @@ int main(int argc, char **argv) {
     if (call_get_count(fd, service_handle, &count) != 0)
         return 1;
 
-    if (count != rounds) {
+    if (expect_at_least) {
+        if (count < rounds) {
+            fprintf(stderr, "oneway client: count too low expected_at_least=%d got=%d\n",
+                    rounds,
+                    count);
+            return 1;
+        }
+    } else if (count != rounds) {
         fprintf(stderr, "oneway client: count mismatch expected=%d got=%d\n",
                 rounds,
                 count);
