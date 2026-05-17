@@ -26,9 +26,10 @@ scp build/android_like_echo_service_static root@"$TV_IP":"$SIDE_DIR/bin/android_
 scp build/android_like_callback_service_static root@"$TV_IP":"$SIDE_DIR/bin/android_like_callback_service"
 scp build/android_like_callback_client_static root@"$TV_IP":"$SIDE_DIR/bin/android_like_callback_client"
 
+scp build/android_like_callback_threadpool_client_static root@"$TV_IP":"$SIDE_DIR/bin/android_like_callback_threadpool_client"
 scp build/linux-4.4.84/drivers/android/binder.ko root@"$TV_IP":"$SIDE_DIR/modules/binder.ko"
 scp scripts/load-binder-tv.sh root@"$TV_IP":"$SIDE_DIR/load-binder-tv.sh"
 
-ssh root@"$TV_IP" "chmod +x '$SIDE_DIR/bin/mini_servicemgr' '$SIDE_DIR/bin/echo_service' '$SIDE_DIR/bin/echo_client' '$SIDE_DIR/bin/list_services' '$SIDE_DIR/bin/aosp_sm_probe' '$SIDE_DIR/bin/libbinder_lite_client' '$SIDE_DIR/bin/aidl_lite_echo_client' '$SIDE_DIR/bin/aidl_lite_echo_service' '$SIDE_DIR/bin/android_like_echo_client' '$SIDE_DIR/bin/android_like_lifecycle_client' '$SIDE_DIR/bin/android_like_stale_handle_client' '$SIDE_DIR/bin/android_like_death_recipient_client' '$SIDE_DIR/bin/android_like_unlink_death_client' '$SIDE_DIR/bin/android_like_echo_service' '$SIDE_DIR/bin/android_like_callback_service' '$SIDE_DIR/bin/android_like_callback_client' '$SIDE_DIR/load-binder-tv.sh'"
+ssh root@"$TV_IP" "chmod +x '$SIDE_DIR/bin/mini_servicemgr' '$SIDE_DIR/bin/echo_service' '$SIDE_DIR/bin/echo_client' '$SIDE_DIR/bin/list_services' '$SIDE_DIR/bin/aosp_sm_probe' '$SIDE_DIR/bin/libbinder_lite_client' '$SIDE_DIR/bin/aidl_lite_echo_client' '$SIDE_DIR/bin/aidl_lite_echo_service' '$SIDE_DIR/bin/android_like_echo_client' '$SIDE_DIR/bin/android_like_lifecycle_client' '$SIDE_DIR/bin/android_like_stale_handle_client' '$SIDE_DIR/bin/android_like_death_recipient_client' '$SIDE_DIR/bin/android_like_unlink_death_client' '$SIDE_DIR/bin/android_like_echo_service' '$SIDE_DIR/bin/android_like_callback_service' '$SIDE_DIR/bin/android_like_callback_client' '$SIDE_DIR/bin/android_like_callback_threadpool_client' '$SIDE_DIR/load-binder-tv.sh'"
 
 echo "Installed sidecar to $TV_IP:$SIDE_DIR"
