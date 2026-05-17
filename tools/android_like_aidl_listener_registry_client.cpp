@@ -16,6 +16,8 @@ static int g_fd = -1;
 static std::atomic<int> g_looper_ready(0);
 static std::atomic<int> g_callback_seen(0);
 static std::atomic<int> g_callback_ok(0);
+static std::atomic<int> g_unregister_waiting(0);
+static std::atomic<int> g_unregister_ok(0);
 
 static binder_uintptr_t listener_ptr_for_id(int id) {
     return ((binder_uintptr_t)0x5245474c53540000ULL) | ((binder_uintptr_t)id & 0xffffU);
@@ -197,6 +199,58 @@ static void *looper_thread_main(void *arg) {
                 continue;
             }
 
+            if (rcmd == BR_REPLY) {
+                struct binder_transaction_data reply;
+                struct aidl_like_reader r;
+                int32_t exception_code = 0;
+                std::string msg;
+
+                if (ptr + sizeof(reply) > end)
+                    return NULL;
+
+                memcpy(&reply, ptr, sizeof(reply));
+                ptr += sizeof(reply);
+
+                if (!g_unregister_waiting.load()) {
+                    fprintf(stderr, "registry client looper unexpected BR_REPLY while not unregistering\n");
+                    cb_binder_free_buffer(g_fd, reply.data.ptr.buffer, "registry client looper free unexpected reply");
+                    return NULL;
+                }
+
+                memset(&r, 0, sizeof(r));
+                r.data = (const uint8_t *)(uintptr_t)reply.data.ptr.buffer;
+                r.size = (size_t)reply.data_size;
+                r.pos = 0;
+
+                if (aidl_like_read_i32(&r, &exception_code) != 0) {
+                    cb_binder_free_buffer(g_fd, reply.data.ptr.buffer, "registry client looper free bad unregister reply");
+                    return NULL;
+                }
+
+                if (exception_code != 0) {
+                    fprintf(stderr, "registry client looper unregister exception=%d id=%d\n",
+                            exception_code,
+                            g_client_id);
+                    cb_binder_free_buffer(g_fd, reply.data.ptr.buffer, "registry client looper free exception unregister reply");
+                    return NULL;
+                }
+
+                if (aidl_like_read_string16_ascii(&r, &msg) != 0) {
+                    cb_binder_free_buffer(g_fd, reply.data.ptr.buffer, "registry client looper free bad unregister string");
+                    return NULL;
+                }
+
+                cb_binder_free_buffer(g_fd, reply.data.ptr.buffer, "registry client looper free unregister reply");
+
+                printf("AIDL_LIKE_LISTENER_UNREGISTER_REPLY_OK id=%d msg=%s\n",
+                       g_client_id,
+                       msg.c_str());
+                fflush(stdout);
+
+                g_unregister_ok.store(1);
+                continue;
+            }
+
             if (rcmd == BR_INCREFS || rcmd == BR_ACQUIRE || rcmd == BR_RELEASE || rcmd == BR_DECREFS) {
                 if (cb_handle_ref_cmd(g_fd, rcmd, &ptr, end, "registry client looper") != 0)
                     return NULL;
@@ -219,11 +273,9 @@ static int unregister_listener_sync(int fd, uint32_t service_handle) {
     uint8_t parcel[512];
     size_t parcel_size = 0;
     uint8_t writebuf[1024];
-    uint8_t readbuf[8192];
     uint8_t *p = writebuf;
     uint32_t cmd;
     struct binder_transaction_data tr;
-    int first = 1;
 
     if (write_token(parcel, sizeof(parcel), &parcel_size, REGISTRY_SERVICE_DESCRIPTOR) != 0 ||
         cb_parcel_write_i32(parcel, sizeof(parcel), &parcel_size, (int32_t)g_client_id) != 0) {
@@ -234,7 +286,7 @@ static int unregister_listener_sync(int fd, uint32_t service_handle) {
     memset(&tr, 0, sizeof(tr));
     tr.target.handle = service_handle;
     tr.code = REGISTRY_TX_UNREGISTER_LISTENER;
-    tr.flags = TF_ACCEPT_FDS | TF_ONE_WAY;
+    tr.flags = TF_ACCEPT_FDS;
     tr.data_size = parcel_size;
     tr.offsets_size = 0;
     tr.data.ptr.buffer = (binder_uintptr_t)parcel;
@@ -244,100 +296,39 @@ static int unregister_listener_sync(int fd, uint32_t service_handle) {
     cb_append_u32(&p, cmd);
     cb_append_bytes(&p, &tr, sizeof(tr));
 
+    g_unregister_waiting.store(1);
+    g_unregister_ok.store(0);
+
     printf("AIDL_LIKE_LISTENER_UNREGISTER_REQUEST_SENT id=%d\n", g_client_id);
     fflush(stdout);
 
-    for (;;) {
-        int n;
-        uint8_t *ptr;
-        uint8_t *end;
-
-        n = cb_binder_write_read(fd,
-                                 first ? writebuf : NULL,
-                                 first ? (size_t)(p - writebuf) : 0,
-                                 readbuf,
-                                 sizeof(readbuf),
-                                 first ? "registry client unregister oneway call" : "registry client unregister oneway wait");
-        first = 0;
-
-        if (n < 0)
-            return -1;
-
-        ptr = readbuf;
-        end = readbuf + n;
-
-        while (ptr + sizeof(uint32_t) <= end) {
-            uint32_t rcmd;
-
-            memcpy(&rcmd, ptr, sizeof(rcmd));
-            ptr += sizeof(rcmd);
-
-            printf("registry client unregister oneway got %s 0x%08x\n", cb_cmd_name(rcmd), rcmd);
-
-            if (rcmd == BR_NOOP || rcmd == BR_SPAWN_LOOPER)
-                continue;
-
-            if (rcmd == BR_TRANSACTION_COMPLETE) {
-                printf("AIDL_LIKE_LISTENER_UNREGISTER_ONEWAY_SENT id=%d\n", g_client_id);
-                printf("AIDL_LIKE_LISTENER_UNREGISTER_CLIENT_SMOKE_OK id=%d\n", g_client_id);
-                fflush(stdout);
-                return 0;
-            }
-
-            if (rcmd == BR_REPLY) {
-                struct binder_transaction_data reply;
-
-                if (ptr + sizeof(reply) > end)
-                    return -1;
-
-                memcpy(&reply, ptr, sizeof(reply));
-                ptr += sizeof(reply);
-
-                cb_binder_free_buffer(fd,
-                                      reply.data.ptr.buffer,
-                                      "registry client unregister unexpected reply free");
-
-                fprintf(stderr, "registry client: unexpected BR_REPLY for one-way unregister id=%d\n",
-                        g_client_id);
-                return -1;
-            }
-
-            if (rcmd == BR_TRANSACTION) {
-                struct binder_transaction_data incoming;
-
-                if (ptr + sizeof(incoming) > end)
-                    return -1;
-
-                memcpy(&incoming, ptr, sizeof(incoming));
-                ptr += sizeof(incoming);
-
-                fprintf(stderr,
-                        "registry client unregister: unexpected callback on main id=%d code=0x%x\n",
-                        g_client_id,
-                        incoming.code);
-
-                send_string_reply(fd,
-                                  incoming.data.ptr.buffer,
-                                  -1,
-                                  NULL,
-                                  "registry client unregister unexpected callback reply");
-                return -1;
-            }
-
-            if (rcmd == BR_INCREFS || rcmd == BR_ACQUIRE || rcmd == BR_RELEASE || rcmd == BR_DECREFS) {
-                if (cb_handle_ref_cmd(fd, rcmd, &ptr, end, "registry client unregister") != 0)
-                    return -1;
-
-                continue;
-            }
-
-            if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY)
-                return -1;
-
-            fprintf(stderr, "registry client unregister oneway unhandled cmd=0x%08x\n", rcmd);
-            return -1;
-        }
+    /*
+     * Do a write-only synchronous transaction. The Binder reply may be delivered
+     * to the looper thread because both threads share the same Binder FD.
+     * The looper consumes BR_REPLY and sets g_unregister_ok.
+     */
+    if (cb_binder_write_read(fd,
+                             writebuf,
+                             (size_t)(p - writebuf),
+                             NULL,
+                             0,
+                             "registry client unregister write-only") < 0) {
+        return -1;
     }
+
+    for (int i = 0; i < 1000; i++) {
+        if (g_unregister_ok.load()) {
+            printf("AIDL_LIKE_LISTENER_UNREGISTER_CLIENT_SMOKE_OK id=%d\n", g_client_id);
+            fflush(stdout);
+            return 0;
+        }
+
+        usleep(10000);
+    }
+
+    fprintf(stderr, "registry client: timeout waiting for unregister reply via looper id=%d\n",
+            g_client_id);
+    return -1;
 }
 
 
