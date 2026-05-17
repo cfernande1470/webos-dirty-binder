@@ -124,3 +124,10 @@ echo "== Android-like AIDL listener registry smoke =="
 CLIENTS="${CLIENTS:-8}" ./scripts/run-android-like-aidl-listener-registry-tv.sh
 
 echo "AIDL_LIKE_LISTENER_REGISTRY_V0_OK"
+
+
+echo "== Android-like AIDL listener unregister smoke =="
+
+CLIENTS="${CLIENTS:-8}" ./scripts/run-android-like-aidl-listener-unregister-tv.sh
+
+echo "AIDL_LIKE_LISTENER_UNREGISTER_V0_OK"

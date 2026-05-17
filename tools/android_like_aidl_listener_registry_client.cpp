@@ -8,6 +8,7 @@
 #define REGISTRY_LISTENER_DESCRIPTOR "webos.dirtybinder.IRegistryListener"
 
 #define REGISTRY_TX_REGISTER_LISTENER 1U
+#define REGISTRY_TX_UNREGISTER_LISTENER 2U
 #define REGISTRY_TX_ON_BROADCAST 1U
 
 static int g_client_id = 0;
@@ -214,6 +215,128 @@ static void *looper_thread_main(void *arg) {
     return NULL;
 }
 
+static int unregister_listener_sync(int fd, uint32_t service_handle) {
+    uint8_t parcel[512];
+    size_t parcel_size = 0;
+    uint8_t writebuf[1024];
+    uint8_t readbuf[8192];
+    uint8_t *p = writebuf;
+    uint32_t cmd;
+    struct binder_transaction_data tr;
+    int first = 1;
+
+    if (write_token(parcel, sizeof(parcel), &parcel_size, REGISTRY_SERVICE_DESCRIPTOR) != 0 ||
+        cb_parcel_write_i32(parcel, sizeof(parcel), &parcel_size, (int32_t)g_client_id) != 0) {
+        fprintf(stderr, "registry client: failed to build unregister request id=%d\n", g_client_id);
+        return -1;
+    }
+
+    memset(&tr, 0, sizeof(tr));
+    tr.target.handle = service_handle;
+    tr.code = REGISTRY_TX_UNREGISTER_LISTENER;
+    tr.flags = TF_ACCEPT_FDS;
+    tr.data_size = parcel_size;
+    tr.offsets_size = 0;
+    tr.data.ptr.buffer = (binder_uintptr_t)parcel;
+    tr.data.ptr.offsets = 0;
+
+    cmd = BC_TRANSACTION;
+    cb_append_u32(&p, cmd);
+    cb_append_bytes(&p, &tr, sizeof(tr));
+
+    printf("AIDL_LIKE_LISTENER_UNREGISTER_REQUEST_SENT id=%d\n", g_client_id);
+    fflush(stdout);
+
+    for (;;) {
+        int n;
+        uint8_t *ptr;
+        uint8_t *end;
+
+        n = cb_binder_write_read(fd,
+                                 first ? writebuf : NULL,
+                                 first ? (size_t)(p - writebuf) : 0,
+                                 readbuf,
+                                 sizeof(readbuf),
+                                 first ? "registry client unregister call" : "registry client unregister wait");
+        first = 0;
+
+        if (n < 0)
+            return -1;
+
+        ptr = readbuf;
+        end = readbuf + n;
+
+        while (ptr + sizeof(uint32_t) <= end) {
+            uint32_t rcmd;
+
+            memcpy(&rcmd, ptr, sizeof(rcmd));
+            ptr += sizeof(rcmd);
+
+            printf("registry client unregister got %s 0x%08x\n", cb_cmd_name(rcmd), rcmd);
+
+            if (rcmd == BR_NOOP || rcmd == BR_TRANSACTION_COMPLETE || rcmd == BR_SPAWN_LOOPER)
+                continue;
+
+            if (rcmd == BR_REPLY) {
+                struct binder_transaction_data reply;
+                struct aidl_like_reader r;
+                int32_t exception_code = 0;
+                std::string msg;
+
+                if (ptr + sizeof(reply) > end)
+                    return -1;
+
+                memcpy(&reply, ptr, sizeof(reply));
+                ptr += sizeof(reply);
+
+                memset(&r, 0, sizeof(r));
+                r.data = (const uint8_t *)(uintptr_t)reply.data.ptr.buffer;
+                r.size = (size_t)reply.data_size;
+                r.pos = 0;
+
+                if (aidl_like_read_i32(&r, &exception_code) != 0) {
+                    cb_binder_free_buffer(fd, reply.data.ptr.buffer, "registry client unregister free bad reply");
+                    return -1;
+                }
+
+                if (exception_code != 0) {
+                    fprintf(stderr, "registry client: unregister exception=%d id=%d\n",
+                            exception_code,
+                            g_client_id);
+                    cb_binder_free_buffer(fd, reply.data.ptr.buffer, "registry client unregister free exception reply");
+                    return -1;
+                }
+
+                if (aidl_like_read_string16_ascii(&r, &msg) != 0) {
+                    cb_binder_free_buffer(fd, reply.data.ptr.buffer, "registry client unregister free bad string reply");
+                    return -1;
+                }
+
+                cb_binder_free_buffer(fd, reply.data.ptr.buffer, "registry client unregister free reply");
+
+                printf("AIDL_LIKE_LISTENER_UNREGISTER_REPLY_OK id=%d msg=%s\n",
+                       g_client_id,
+                       msg.c_str());
+                fflush(stdout);
+                return 0;
+            }
+
+            if (rcmd == BR_INCREFS || rcmd == BR_ACQUIRE || rcmd == BR_RELEASE || rcmd == BR_DECREFS) {
+                if (cb_handle_ref_cmd(fd, rcmd, &ptr, end, "registry client unregister") != 0)
+                    return -1;
+
+                continue;
+            }
+
+            if (rcmd == BR_DEAD_REPLY || rcmd == BR_FAILED_REPLY)
+                return -1;
+
+            fprintf(stderr, "registry client unregister unhandled cmd=0x%08x\n", rcmd);
+            return -1;
+        }
+    }
+}
+
 static int register_listener_oneway(int fd, uint32_t service_handle) {
     uint8_t parcel[1024];
     size_t parcel_size = 0;
@@ -359,9 +482,13 @@ int main(int argc, char **argv) {
     pthread_t looper_thread;
     uint32_t service_handle = 0;
     int rc;
+    int unregister_mode = 0;
 
     if (argc > 2)
         g_client_id = atoi(argv[2]);
+
+    if (argc > 3 && strcmp(argv[3], "--unregister") == 0)
+        unregister_mode = 1;
 
     if (g_client_id <= 0)
         g_client_id = 1;
@@ -395,6 +522,15 @@ int main(int argc, char **argv) {
     printf("registry client main: id=%d service handle=%u\n", g_client_id, service_handle);
 
     rc = register_listener_oneway(g_fd, service_handle);
+
+    if (rc == 0 && unregister_mode) {
+        if (unregister_listener_sync(g_fd, service_handle) != 0)
+            rc = 1;
+        else {
+            printf("AIDL_LIKE_LISTENER_UNREGISTER_CLIENT_SMOKE_OK id=%d\n", g_client_id);
+            fflush(stdout);
+        }
+    }
 
     cb_binder_release_handle(g_fd, service_handle, "registry client release service");
 

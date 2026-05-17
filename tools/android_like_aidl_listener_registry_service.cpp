@@ -7,12 +7,15 @@
 #define REGISTRY_LISTENER_DESCRIPTOR "webos.dirtybinder.IRegistryListener"
 
 #define REGISTRY_TX_REGISTER_LISTENER 1U
+#define REGISTRY_TX_UNREGISTER_LISTENER 2U
 #define REGISTRY_TX_ON_BROADCAST 1U
 #define REGISTRY_PING 0x50494e47U
 
 #define BC_REQUEST_DEATH_NOTIFICATION_RAW_4_4 0x400c630eU
+#define BC_CLEAR_DEATH_NOTIFICATION_RAW_4_4 0x400c630fU
 #define BC_DEAD_BINDER_DONE_RAW_4_4 0x40086310U
 #define BR_DEAD_BINDER_RAW_4_4 0x8008720fU
+#define BR_CLEAR_DEATH_NOTIFICATION_DONE_RAW_4_4 0x80087210U
 
 static const binder_uintptr_t kRegistryServicePtr =
     (binder_uintptr_t)0x5245475352563030ULL; /* REGSRV00 */
@@ -33,6 +36,7 @@ static std::vector<listener_entry> g_listeners;
 static int g_expected_listeners = 8;
 static int g_broadcast_done = 0;
 static int g_death_count = 0;
+static int g_unregister_count = 0;
 
 static int write_token(uint8_t *buf, size_t cap, size_t *pos, const char *descriptor) {
     if (cb_parcel_write_i32(buf, cap, pos, 0) != 0)
@@ -82,6 +86,28 @@ static int request_listener_death_notification(int fd, uint32_t handle, binder_u
                                 NULL,
                                 0,
                                 "registry service request listener death") < 0 ? -1 : 0;
+}
+
+static int clear_listener_death_notification(int fd, uint32_t handle, binder_uintptr_t cookie) {
+    uint8_t writebuf[64];
+    uint8_t *p = writebuf;
+    uint32_t cmd = BC_CLEAR_DEATH_NOTIFICATION_RAW_4_4;
+
+    cb_append_u32(&p, cmd);
+    cb_append_u32(&p, handle);
+    cb_append_bytes(&p, &cookie, sizeof(cookie));
+
+    printf("registry service: clear death handle=%u cookie=0x%" PRIx64 " write_size=%zu\n",
+           handle,
+           (uint64_t)cookie,
+           (size_t)(p - writebuf));
+
+    return cb_binder_write_read(fd,
+                                writebuf,
+                                (size_t)(p - writebuf),
+                                NULL,
+                                0,
+                                "registry service clear listener death") < 0 ? -1 : 0;
 }
 
 static int send_dead_binder_done(int fd, binder_uintptr_t cookie) {
@@ -400,6 +426,91 @@ static int process_register_listener(int fd, struct binder_transaction_data *tr)
     return maybe_broadcast(fd);
 }
 
+static int process_unregister_listener(int fd, struct binder_transaction_data *tr) {
+    struct aidl_like_reader r;
+    int32_t client_id = 0;
+    listener_entry *found = NULL;
+
+    memset(&r, 0, sizeof(r));
+    r.data = (const uint8_t *)(uintptr_t)tr->data.ptr.buffer;
+    r.size = (size_t)tr->data_size;
+    r.pos = 0;
+
+    if (read_token(&r, REGISTRY_SERVICE_DESCRIPTOR) != 0) {
+        return send_string_reply(fd,
+                                 tr->data.ptr.buffer,
+                                 -1,
+                                 NULL,
+                                 "registry service unregister bad-token reply");
+    }
+
+    if (aidl_like_read_i32(&r, &client_id) != 0) {
+        return send_string_reply(fd,
+                                 tr->data.ptr.buffer,
+                                 -1,
+                                 NULL,
+                                 "registry service unregister bad-id reply");
+    }
+
+    for (size_t i = 0; i < g_listeners.size(); i++) {
+        if (g_listeners[i].id == (uint32_t)client_id && g_listeners[i].alive) {
+            found = &g_listeners[i];
+            break;
+        }
+    }
+
+    if (!found) {
+        fprintf(stderr, "registry service: unregister missing/already-dead id=%d\n", client_id);
+        return send_string_reply(fd,
+                                 tr->data.ptr.buffer,
+                                 -1,
+                                 NULL,
+                                 "registry service unregister missing reply");
+    }
+
+    if (clear_listener_death_notification(fd, found->handle, found->cookie) != 0) {
+        fprintf(stderr, "registry service: clear death failed id=%u\n", found->id);
+        return send_string_reply(fd,
+                                 tr->data.ptr.buffer,
+                                 -1,
+                                 NULL,
+                                 "registry service unregister clear-death failed reply");
+    }
+
+    if (cb_binder_release_handle(fd,
+                                 found->handle,
+                                 "registry service release unregistered listener") != 0) {
+        return send_string_reply(fd,
+                                 tr->data.ptr.buffer,
+                                 -1,
+                                 NULL,
+                                 "registry service unregister release failed reply");
+    }
+
+    found->alive = 0;
+    g_unregister_count++;
+
+    printf("AIDL_LIKE_LISTENER_UNREGISTER_OK id=%u unregister_count=%d/%d\n",
+           found->id,
+           g_unregister_count,
+           g_expected_listeners);
+    fflush(stdout);
+
+    if (send_string_reply(fd,
+                          tr->data.ptr.buffer,
+                          0,
+                          "listener unregistered",
+                          "registry service unregister reply") != 0)
+        return -1;
+
+    if (g_unregister_count >= g_expected_listeners) {
+        printf("AIDL_LIKE_LISTENER_UNREGISTER_ALL_OK\n");
+        fflush(stdout);
+    }
+
+    return 0;
+}
+
 static int process_transaction(int fd, struct binder_transaction_data *tr) {
     printf("registry service BR_TRANSACTION code=0x%x sender_pid=%d sender_euid=%u data_size=%llu offsets_size=%llu flags=0x%x\n",
            tr->code,
@@ -415,6 +526,9 @@ static int process_transaction(int fd, struct binder_transaction_data *tr) {
 
     if (tr->code == REGISTRY_TX_REGISTER_LISTENER)
         return process_register_listener(fd, tr);
+
+    if (tr->code == REGISTRY_TX_UNREGISTER_LISTENER)
+        return process_unregister_listener(fd, tr);
 
     if (tr->flags & TF_ONE_WAY) {
         cb_binder_free_buffer(fd, tr->data.ptr.buffer, "registry service free unknown oneway");
@@ -510,6 +624,21 @@ static int service_loop(int fd) {
                 if (process_transaction(fd, &tr) != 0)
                     return -1;
 
+                continue;
+            }
+
+            if (rcmd == BR_CLEAR_DEATH_NOTIFICATION_DONE_RAW_4_4) {
+                binder_uintptr_t cookie = 0;
+
+                if (ptr + sizeof(cookie) > end)
+                    return -1;
+
+                memcpy(&cookie, ptr, sizeof(cookie));
+                ptr += sizeof(cookie);
+
+                printf("registry service: BR_CLEAR_DEATH_NOTIFICATION_DONE cookie=0x%" PRIx64 "\n",
+                       (uint64_t)cookie);
+                fflush(stdout);
                 continue;
             }
 
