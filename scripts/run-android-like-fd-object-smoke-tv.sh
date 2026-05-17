@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "DIRECT_BINDER_FD_QUARANTINED"
+echo "Direct BINDER_TYPE_FD probes are disabled because they can freeze/reboot the TV."
+echo "Use SCM_RIGHTS FD bridge instead."
+exit 99
+
+set -euo pipefail
+
 echo "ERROR: Binder FD object smoke is quarantined because it can freeze/reboot the TV."
 echo "Use SCM_RIGHTS FD bridge instead."
 exit 99
