@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <sys/types.h>
 #include <linux/android/binder.h>
 #include <sched.h>
 #include <signal.h>
@@ -248,7 +249,9 @@ static int test_tmpfs_mount(const char *base) {
     fd = open(probe, O_CREAT | O_WRONLY | O_CLOEXEC, 0644);
 
     if (fd >= 0) {
-        write(fd, "ok\n", 3);
+        ssize_t wr = write(fd, "ok\n", 3);
+        if (wr != 3)
+            printf("ANDROID_PREFLIGHT_TMPFS_WRITE_WARN wr=%zd errno=%d (%s)\n", wr, errno, strerror(errno));
         close(fd);
         rm_file_if_exists(probe);
     }
