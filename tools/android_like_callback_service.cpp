@@ -26,6 +26,7 @@ static int process_register_callback(int fd, struct binder_transaction_data *tr)
 
     printf("callback service: received callback handle=%u\n", callback_handle);
     printf("ANDROID_LIKE_CALLBACK_HANDLE_OK\n");
+    fflush(stdout);
 
     if (cb_binder_acquire_handle(fd, callback_handle, "callback service BC_ACQUIRE callback") != 0) {
         cb_send_text_reply(fd, tr->data.ptr.buffer, 1, "failed to acquire callback", "callback service acquire-fail reply");
@@ -57,6 +58,7 @@ static int process_register_callback(int fd, struct binder_transaction_data *tr)
     }
 
     printf("ANDROID_LIKE_CALLBACK_REPLY_OK\n");
+    fflush(stdout);
 
     if (cb_binder_release_handle(fd, callback_handle, "callback service BC_RELEASE callback") != 0)
         return -1;
@@ -69,6 +71,7 @@ static int process_register_callback(int fd, struct binder_transaction_data *tr)
         return -1;
 
     printf("ANDROID_LIKE_CALLBACK_SERVICE_OK\n");
+    fflush(stdout);
     return 0;
 }
 
@@ -126,6 +129,13 @@ static int callback_service_loop(int fd) {
                     continue;
                 }
 
+                if (tr.code == 0x50494e47U) { /* PING */
+                    printf("callback service: handled PING\n");
+                    fflush(stdout);
+                    cb_send_text_reply(fd, tr.data.ptr.buffer, 0, "pong", "callback service ping reply");
+                    continue;
+                }
+
                 fprintf(stderr, "callback service unknown code=0x%x\n", tr.code);
                 cb_send_text_reply(fd, tr.data.ptr.buffer, 1, "unknown callback service code", "callback service unknown-code reply");
                 continue;
@@ -151,6 +161,9 @@ static int callback_service_loop(int fd) {
 int main(int argc, char **argv) {
     const char *service_name = argc > 1 ? argv[1] : "test.android.callback";
     int fd;
+
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    setvbuf(stderr, NULL, _IOLBF, 0);
 
     fd = cb_binder_open_and_init("callback service");
     if (fd < 0)
