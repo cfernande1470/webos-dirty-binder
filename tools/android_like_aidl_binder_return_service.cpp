@@ -1,6 +1,7 @@
 #include "android_like_aidl_common.hpp"
 
 #include <string>
+#include <vector>
 
 #define FACTORY_DESCRIPTOR "webos.dirtybinder.IBinderFactory"
 #define CHILD_DESCRIPTOR "webos.dirtybinder.IReturnedChild"
@@ -28,8 +29,73 @@ static int g_child_releases = 0;
 static int g_child_decrefs = 0;
 static int g_child_lifecycle_done = 0;
 
+static int g_unique_children = 0;
+static int g_next_child_id = 0;
+static int g_unique_child_lifecycle_done = 0;
+
+struct returned_child_entry {
+    int id;
+    binder_uintptr_t ptr;
+    binder_uintptr_t cookie;
+    int increfs;
+    int acquires;
+    int releases;
+    int decrefs;
+};
+
+static std::vector<returned_child_entry> g_returned_children;
+
+static binder_uintptr_t unique_child_ptr_for_id(int id) {
+    return ((binder_uintptr_t)0x5245544348490000ULL) | ((binder_uintptr_t)id & 0xffffU);
+}
+
+static binder_uintptr_t unique_child_cookie_for_id(int id) {
+    return ((binder_uintptr_t)0x524554434b000000ULL) | ((binder_uintptr_t)id & 0xffffU);
+}
+
+static returned_child_entry *find_returned_child(binder_uintptr_t ptr, binder_uintptr_t cookie) {
+    for (size_t i = 0; i < g_returned_children.size(); i++) {
+        if (g_returned_children[i].ptr == ptr && g_returned_children[i].cookie == cookie)
+            return &g_returned_children[i];
+    }
+
+    return NULL;
+}
+
+static void maybe_emit_unique_lifecycle_exact_ok(void) {
+    int releases = 0;
+    int decrefs = 0;
+
+    if (!g_unique_children || g_unique_child_lifecycle_done || g_expected_child_releases <= 0)
+        return;
+
+    for (size_t i = 0; i < g_returned_children.size(); i++) {
+        if (g_returned_children[i].releases > 0)
+            releases++;
+
+        if (g_returned_children[i].decrefs > 0)
+            decrefs++;
+    }
+
+    if ((int)g_returned_children.size() >= g_expected_child_releases &&
+        releases >= g_expected_child_releases &&
+        decrefs >= g_expected_child_releases) {
+        g_unique_child_lifecycle_done = 1;
+
+        printf("AIDL_LIKE_BINDER_RETURN_UNIQUE_CHILD_LIFECYCLE_EXACT_OK children=%zu releases=%d decrefs=%d expected=%d\n",
+               g_returned_children.size(),
+               releases,
+               decrefs,
+               g_expected_child_releases);
+        fflush(stdout);
+    }
+}
+
 static int binder_return_handle_ref_cmd(int fd, uint32_t rcmd, uint8_t **ptr, uint8_t *end) {
     struct binder_ptr_cookie pc;
+    returned_child_entry *unique_child = NULL;
+    int is_child = 0;
+    int child_id = 0;
 
     if (*ptr + sizeof(pc) > end) {
         fprintf(stderr, "binder-return service: truncated ref cmd=0x%08x\n", rcmd);
@@ -45,31 +111,63 @@ static int binder_return_handle_ref_cmd(int fd, uint32_t rcmd, uint8_t **ptr, ui
            (uint64_t)pc.cookie);
 
     if (pc.ptr == kReturnedChildPtr && pc.cookie == kReturnedChildCookie) {
+        is_child = 1;
+        child_id = 0;
+    } else {
+        unique_child = find_returned_child(pc.ptr, pc.cookie);
+
+        if (unique_child) {
+            is_child = 1;
+            child_id = unique_child->id;
+        }
+    }
+
+    if (is_child) {
         if (rcmd == BR_INCREFS) {
             g_child_increfs++;
-            printf("AIDL_LIKE_BINDER_RETURN_CHILD_INCREFS count=%d\n", g_child_increfs);
+
+            if (unique_child)
+                unique_child->increfs++;
+
+            printf("AIDL_LIKE_BINDER_RETURN_CHILD_INCREFS id=%d count=%d\n",
+                   child_id,
+                   g_child_increfs);
         } else if (rcmd == BR_ACQUIRE) {
             g_child_acquires++;
-            printf("AIDL_LIKE_BINDER_RETURN_CHILD_ACQUIRE count=%d\n", g_child_acquires);
+
+            if (unique_child)
+                unique_child->acquires++;
+
+            printf("AIDL_LIKE_BINDER_RETURN_CHILD_ACQUIRE id=%d count=%d\n",
+                   child_id,
+                   g_child_acquires);
         } else if (rcmd == BR_RELEASE) {
             g_child_releases++;
-            printf("AIDL_LIKE_BINDER_RETURN_CHILD_RELEASE count=%d\n", g_child_releases);
+
+            if (unique_child)
+                unique_child->releases++;
+
+            printf("AIDL_LIKE_BINDER_RETURN_CHILD_RELEASE id=%d count=%d\n",
+                   child_id,
+                   g_child_releases);
         } else if (rcmd == BR_DECREFS) {
             g_child_decrefs++;
-            printf("AIDL_LIKE_BINDER_RETURN_CHILD_DECREFS count=%d\n", g_child_decrefs);
+
+            if (unique_child)
+                unique_child->decrefs++;
+
+            printf("AIDL_LIKE_BINDER_RETURN_CHILD_DECREFS id=%d count=%d\n",
+                   child_id,
+                   g_child_decrefs);
         }
 
         fflush(stdout);
 
-        /*
-         * The returned child object is a singleton local Binder object.
-         * Binder may coalesce references for that node, so lifecycle is proven
-         * when the service observes the final strong release for the child,
-         * not when release_count equals number of clients.
-         */
-        if (!g_child_lifecycle_done &&
-            g_expected_child_releases > 0 &&
-            g_child_releases >= 1) {
+        if (g_unique_children) {
+            maybe_emit_unique_lifecycle_exact_ok();
+        } else if (!g_child_lifecycle_done &&
+                   g_expected_child_releases > 0 &&
+                   g_child_releases >= 1) {
             g_child_lifecycle_done = 1;
             printf("AIDL_LIKE_BINDER_RETURN_CHILD_LIFECYCLE_RELEASE_OK releases=%d decrefs=%d expected_clients=%d\n",
                    g_child_releases,
@@ -97,6 +195,7 @@ static int binder_return_handle_ref_cmd(int fd, uint32_t rcmd, uint8_t **ptr, ui
 
     return 0;
 }
+
 
 static int write_token(uint8_t *buf, size_t cap, size_t *pos, const char *descriptor) {
     if (cb_parcel_write_i32(buf, cap, pos, 0) != 0)
@@ -156,8 +255,26 @@ static int send_child_object_reply(int fd, binder_uintptr_t incoming_buffer) {
     uint8_t *p = writebuf;
     uint32_t cmd;
     struct binder_transaction_data reply_tr;
+    int child_id = 0;
+    binder_uintptr_t child_ptr = kReturnedChildPtr;
+    binder_uintptr_t child_cookie = kReturnedChildCookie;
 
     memset(reply, 0, sizeof(reply));
+
+    if (g_unique_children) {
+        returned_child_entry e;
+
+        child_id = ++g_next_child_id;
+        child_ptr = unique_child_ptr_for_id(child_id);
+        child_cookie = unique_child_cookie_for_id(child_id);
+
+        memset(&e, 0, sizeof(e));
+        e.id = child_id;
+        e.ptr = child_ptr;
+        e.cookie = child_cookie;
+
+        g_returned_children.push_back(e);
+    }
 
     if (cb_parcel_write_i32(reply, sizeof(reply), &pos, 0) != 0)
         return -1;
@@ -167,8 +284,8 @@ static int send_child_object_reply(int fd, binder_uintptr_t incoming_buffer) {
     memset(&obj, 0, sizeof(obj));
     obj.type = BINDER_TYPE_BINDER;
     obj.flags = FLAT_BINDER_FLAG_ACCEPTS_FDS;
-    obj.binder = kReturnedChildPtr;
-    obj.cookie = kReturnedChildCookie;
+    obj.binder = child_ptr;
+    obj.cookie = child_cookie;
 
     offsets[0] = (binder_size_t)pos;
     memcpy(reply + pos, &obj, sizeof(obj));
@@ -190,11 +307,12 @@ static int send_child_object_reply(int fd, binder_uintptr_t incoming_buffer) {
 
     cb_append_bytes(&p, &reply_tr, sizeof(reply_tr));
 
-    printf("binder-return service: sending child object ptr=0x%" PRIx64 " cookie=0x%" PRIx64 " offset=%llu\n",
-           (uint64_t)kReturnedChildPtr,
-           (uint64_t)kReturnedChildCookie,
+    printf("binder-return service: sending child object id=%d ptr=0x%" PRIx64 " cookie=0x%" PRIx64 " offset=%llu\n",
+           child_id,
+           (uint64_t)child_ptr,
+           (uint64_t)child_cookie,
            (unsigned long long)offsets[0]);
-    printf("AIDL_LIKE_BINDER_RETURN_CHILD_OBJECT_SENT\n");
+    printf("AIDL_LIKE_BINDER_RETURN_CHILD_OBJECT_SENT id=%d\n", child_id);
     fflush(stdout);
 
     return cb_binder_write_read(fd,
@@ -204,6 +322,7 @@ static int send_child_object_reply(int fd, binder_uintptr_t incoming_buffer) {
                                 0,
                                 "binder-return service child object reply") < 0 ? -1 : 0;
 }
+
 
 static int process_factory_transaction(int fd, struct binder_transaction_data *tr) {
     struct aidl_like_reader r;
@@ -392,6 +511,13 @@ int main(int argc, char **argv) {
 
     if (argc > 2)
         g_expected_child_releases = atoi(argv[2]);
+
+    if (argc > 3 && strcmp(argv[3], "--unique-children") == 0) {
+        g_unique_children = 1;
+        printf("AIDL_LIKE_BINDER_RETURN_UNIQUE_MODE expected=%d\n",
+               g_expected_child_releases);
+        fflush(stdout);
+    }
 
     fd = cb_binder_open_and_init("binder-return service");
 
