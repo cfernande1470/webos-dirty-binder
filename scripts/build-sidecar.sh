@@ -257,3 +257,8 @@ echo "== build parcel_fd_lite_client =="
 "$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -pthread -o build/parcel_fd_lite_client_static tools/parcel_fd_lite_client.cpp
 file build/parcel_fd_lite_client_static
 ls -lh build/parcel_fd_lite_client_static
+
+echo "== build android_userspace_preflight_v1 =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -pthread -o build/android_userspace_preflight_v1_static tools/android_userspace_preflight_v1.cpp
+file build/android_userspace_preflight_v1_static
+ls -lh build/android_userspace_preflight_v1_static
