@@ -82,3 +82,10 @@ echo "== Android-like AIDL Parcel smoke =="
 ROUNDS="${ROUNDS:-16}" ./scripts/run-android-like-aidl-smoke-tv.sh
 
 echo "AIDL_LIKE_PARCEL_V0_OK"
+
+
+echo "== Android-like AIDL concurrent stress smoke =="
+
+CLIENTS="${CLIENTS:-16}" ROUNDS="${ROUNDS:-50}" ./scripts/run-android-like-aidl-stress-tv.sh
+
+echo "AIDL_LIKE_STRESS_V0_OK"
