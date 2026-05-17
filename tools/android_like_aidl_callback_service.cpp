@@ -34,29 +34,40 @@ static const binder_uintptr_t kAidlCallbackListenerDeathCookie =
 #endif
 
 static int request_listener_death_notification(int fd, uint32_t handle, binder_uintptr_t cookie) {
-    uint8_t writebuf[128];
+    uint8_t writebuf[64];
     uint8_t *p = writebuf;
     uint32_t cmd = BC_REQUEST_DEATH_NOTIFICATION;
-    struct binder_handle_cookie hc;
 
-    memset(&hc, 0, sizeof(hc));
-    hc.handle = handle;
-    hc.cookie = cookie;
-
+    /*
+     * LG/webOS Binder 4.4 expects the raw payload encoded by the command:
+     *
+     *   cmd u32
+     *   handle u32
+     *   cookie binder_uintptr_t
+     *
+     * Total write size on 64-bit: 4 + 4 + 8 = 16.
+     *
+     * Do not append struct binder_handle_cookie here: userspace alignment can
+     * make it 16 bytes, producing total write_size=20 and EINVAL.
+     */
     cb_append_u32(&p, cmd);
-    cb_append_bytes(&p, &hc, sizeof(hc));
+    cb_append_u32(&p, handle);
+    cb_append_bytes(&p, &cookie, sizeof(cookie));
 
-    printf("aidl-callback service: request listener death handle=%u cookie=0x%" PRIx64 "\n",
+    printf("aidl-callback service: request listener death RAW cmd=0x%08x handle=%u cookie=0x%" PRIx64 " write_size=%zu\n",
+           cmd,
            handle,
-           (uint64_t)cookie);
+           (uint64_t)cookie,
+           (size_t)(p - writebuf));
 
     return cb_binder_write_read(fd,
                                 writebuf,
                                 (size_t)(p - writebuf),
                                 NULL,
                                 0,
-                                "aidl-callback service request listener death") < 0 ? -1 : 0;
+                                "aidl-callback service request listener death raw") < 0 ? -1 : 0;
 }
+
 
 static int send_dead_binder_done(int fd, binder_uintptr_t cookie) {
     uint8_t writebuf[64];
