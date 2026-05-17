@@ -247,3 +247,13 @@ echo "== build fd_bridge_client =="
 "$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -pthread -o build/fd_bridge_client_static tools/fd_bridge_client.cpp
 file build/fd_bridge_client_static
 ls -lh build/fd_bridge_client_static
+
+echo "== build parcel_fd_lite_service =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -pthread -o build/parcel_fd_lite_service_static tools/parcel_fd_lite_service.cpp
+file build/parcel_fd_lite_service_static
+ls -lh build/parcel_fd_lite_service_static
+
+echo "== build parcel_fd_lite_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -pthread -o build/parcel_fd_lite_client_static tools/parcel_fd_lite_client.cpp
+file build/parcel_fd_lite_client_static
+ls -lh build/parcel_fd_lite_client_static
