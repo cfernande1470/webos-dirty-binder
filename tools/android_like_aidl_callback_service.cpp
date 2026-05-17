@@ -33,10 +33,14 @@ static const binder_uintptr_t kAidlCallbackListenerDeathCookie =
 #define BC_DEAD_BINDER_DONE _IOW('c', 16, binder_uintptr_t)
 #endif
 
+#define BC_REQUEST_DEATH_NOTIFICATION_RAW_4_4 0x400c630eU
+#define BC_DEAD_BINDER_DONE_RAW_4_4 0x40086310U
+#define BR_DEAD_BINDER_RAW_4_4 0x8008720fU
+
 static int request_listener_death_notification(int fd, uint32_t handle, binder_uintptr_t cookie) {
     uint8_t writebuf[64];
     uint8_t *p = writebuf;
-    uint32_t cmd = BC_REQUEST_DEATH_NOTIFICATION;
+    uint32_t cmd = BC_REQUEST_DEATH_NOTIFICATION_RAW_4_4;
 
     /*
      * LG/webOS Binder 4.4 expects the raw payload encoded by the command:
@@ -72,7 +76,7 @@ static int request_listener_death_notification(int fd, uint32_t handle, binder_u
 static int send_dead_binder_done(int fd, binder_uintptr_t cookie) {
     uint8_t writebuf[64];
     uint8_t *p = writebuf;
-    uint32_t cmd = BC_DEAD_BINDER_DONE;
+    uint32_t cmd = BC_DEAD_BINDER_DONE_RAW_4_4;
 
     cb_append_u32(&p, cmd);
     cb_append_bytes(&p, &cookie, sizeof(cookie));
@@ -454,7 +458,7 @@ static int service_loop(int fd) {
                 continue;
             }
 
-            if (rcmd == BR_DEAD_BINDER) {
+            if (rcmd == BR_DEAD_BINDER || rcmd == BR_DEAD_BINDER_RAW_4_4) {
                 binder_uintptr_t cookie = 0;
 
                 if (ptr + sizeof(cookie) > end)
