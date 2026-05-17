@@ -75,3 +75,10 @@ echo "BINDER_CALLBACK_STRESS_V0_OK"
 echo "BINDER_LIFECYCLE_V0_OK"
 echo "BINDER_DEATH_NOTIFICATION_V0_OK"
 echo "ALL_SIDECAR_SMOKE_OK"
+
+
+echo "== Android-like AIDL Parcel smoke =="
+
+ROUNDS="${ROUNDS:-16}" ./scripts/run-android-like-aidl-smoke-tv.sh
+
+echo "AIDL_LIKE_PARCEL_V0_OK"

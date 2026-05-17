@@ -127,3 +127,13 @@ echo "== build android_like_callback_threadpool_client =="
 "$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -pthread -o build/android_like_callback_threadpool_client_static tools/android_like_callback_threadpool_client.cpp
 file build/android_like_callback_threadpool_client_static
 ls -lh build/android_like_callback_threadpool_client_static
+
+echo "== build android_like_aidl_service =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_service_static tools/android_like_aidl_service.cpp
+file build/android_like_aidl_service_static
+ls -lh build/android_like_aidl_service_static
+
+echo "== build android_like_aidl_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_client_static tools/android_like_aidl_client.cpp
+file build/android_like_aidl_client_static
+ls -lh build/android_like_aidl_client_static
