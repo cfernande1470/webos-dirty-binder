@@ -15,6 +15,12 @@ date || true
 uname -a || true
 id || true
 
+# Resolve symlinks so /proc/mounts checks match the actual mount paths.
+ROOTFS="$(readlink -f "$ROOTFS" 2>/dev/null || echo "$ROOTFS")"
+IMG_DIR="$(readlink -f "$IMG_DIR" 2>/dev/null || echo "$IMG_DIR")"
+MNT_DIR="$(readlink -f "$MNT_DIR" 2>/dev/null || echo "$MNT_DIR")"
+USB_DIR="$(readlink -f "$USB_DIR" 2>/dev/null || echo "$USB_DIR")"
+
 SYSTEM_IMG="$IMG_DIR/system.img"
 VENDOR_IMG="$IMG_DIR/vendor.img"
 SYS_RAW="$MNT_DIR/system_raw"
