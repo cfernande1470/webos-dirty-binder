@@ -227,3 +227,13 @@ echo "== build android_like_fd_object_client =="
 "$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_fd_object_client_static tools/android_like_fd_object_client.cpp
 file build/android_like_fd_object_client_static
 ls -lh build/android_like_fd_object_client_static
+
+echo "== build android_like_fd_devnull_service =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_fd_devnull_service_static tools/android_like_fd_devnull_service.cpp
+file build/android_like_fd_devnull_service_static
+ls -lh build/android_like_fd_devnull_service_static
+
+echo "== build android_like_fd_devnull_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_fd_devnull_client_static tools/android_like_fd_devnull_client.cpp
+file build/android_like_fd_devnull_client_static
+ls -lh build/android_like_fd_devnull_client_static
