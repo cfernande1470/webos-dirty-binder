@@ -217,3 +217,13 @@ echo "== build fd_scm_rights_preflight =="
 "$LITE_CXX" -O2 -static -Wall -Wextra -o build/fd_scm_rights_preflight_static tools/fd_scm_rights_preflight.cpp
 file build/fd_scm_rights_preflight_static
 ls -lh build/fd_scm_rights_preflight_static
+
+echo "== build android_like_fd_object_service =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_fd_object_service_static tools/android_like_fd_object_service.cpp
+file build/android_like_fd_object_service_static
+ls -lh build/android_like_fd_object_service_static
+
+echo "== build android_like_fd_object_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_fd_object_client_static tools/android_like_fd_object_client.cpp
+file build/android_like_fd_object_client_static
+ls -lh build/android_like_fd_object_client_static
