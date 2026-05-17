@@ -1,0 +1,116 @@
+== uptime ==
+ 23:00:15 up 1 min,  0 users,  load average: 14.78, 4.52, 1.57
+70.69 83.66
+
+== sidecar logs ==
+
+===== logs/binder_fd_client.log =====
+
+===== logs/binder_fd_service.log =====
+
+===== logs/binder_fd_sm.log =====
+
+===== logs/fd_watchdog.log =====
+
+== dmesg DIRTY_BINDER_FD_DIAG ==
+
+== dmesg binder/fail tail ==
+[   11.446798] dev:vdec, message : [    0.223209] Disabling lock debugging due to kernel taint
+[   12.557746] alsa_se      ERR (01827:02014) _lgse_downmix_connect_output  388: decoder_stop failed, index: 0
+[   12.557770] alsa_se      ERR (01827:02014) _lgse_downmix_connect_output  388: decoder_stop failed, index: 1
+[   12.577737] alsa_se      ERR (01827:02014) _lgse_mode_connect_output  589: decoder_stop failed, index: 0
+[   12.577759] alsa_se      ERR (01827:02014) _lgse_mode_connect_output  589: decoder_stop failed, index: 1
+[   18.779091] [wlan][3267]wlanCheckFWState4Debug:(INIT EVENT) FW state is normal
+[   20.902529] systemd[4105]: crashreportd.service: Failed to execute command: No such file or directory
+[   20.902698] systemd[4105]: crashreportd.service: Failed at step EXEC spawning /usr/sbin/crashreportd: No such file or directory
+[   21.229805] systemd[1]: update.service: Failed with result 'exit-code'.
+[   21.299712] systemd[1]: crashreportd.service: Failed with result 'exit-code'.
+[   21.443526] systemd[4167]: crashreportd.service: Failed to execute command: No such file or directory
+[   21.443676] systemd[4167]: crashreportd.service: Failed at step EXEC spawning /usr/sbin/crashreportd: No such file or directory
+[   21.445231] systemd[1]: crashreportd.service: Failed with result 'exit-code'.
+[   21.646130] systemd[4189]: crashreportd.service: Failed to execute command: No such file or directory
+[   21.646274] systemd[4189]: crashreportd.service: Failed at step EXEC spawning /usr/sbin/crashreportd: No such file or directory
+[   21.649278] systemd[1]: crashreportd.service: Failed with result 'exit-code'.
+[   21.932567] systemd[1]: update.service: Failed with result 'exit-code'.
+[   22.699454] systemd[4269]: crashreportd.service: Failed to execute command: No such file or directory
+[   22.699594] systemd[4269]: crashreportd.service: Failed at step EXEC spawning /usr/sbin/crashreportd: No such file or directory
+[   22.710879] systemd[1]: crashreportd.service: Failed with result 'exit-code'.
+[   22.909963] systemd[4279]: crashreportd.service: Failed to execute command: No such file or directory
+[   22.910089] systemd[4279]: crashreportd.service: Failed at step EXEC spawning /usr/sbin/crashreportd: No such file or directory
+[   22.911627] systemd[1]: crashreportd.service: Failed with result 'exit-code'.
+[   23.163421] systemd[1]: update.service: Failed with result 'exit-code'.
+[   23.165802] systemd[1]: crashreportd.service: Failed with result 'exit-code'.
+[   23.165818] systemd[1]: Failed to start webos-pro - "crashreportd.service".
+[   23.895798] systemd[1]: update.service: Failed with result 'exit-code'.
+[   24.462131] systemd[1]: update.service: Failed with result 'exit-code'.
+[   24.580876] systemd[1]: update.service: Failed with result 'exit-code'.
+[   24.580907] systemd[1]: Failed to start starfish - "update.service".
+[   36.713467] kadp         NOT (04929:04929) KADP_InitSystem           258: KAdaptor Init [1] PS WebAppMgr --type=renderer --disable-in-process-stack-traces --no-sandbox --autoplay-policy=no-user-gesture-required --disable-low-res-tiling --enable-threaded-compositing --enable-watchdog --force-gpu-mem-available-mb=250 --js-flags --network-quiet-timeout=10 --remote-debugging-port=9998 --skia-font-cache-limit-mb=8 --skia-resource-cache-limit-mb=80 --touch-events=disabled --watchdog-renderer-timeout=200 --webos-wam --ozone-platform=wayland --decoded-image-working-set-budget-mb=96 --mem-pressure-gpu-cache-size-reduction-factor=4 --tile-manager-low-mem-policy-bytes-limit-reduction-factor=2 --enable-aggressive-release-policy --user-data-dir=/var/lib/wam --field-trial-handle=10530357779022772463,16067863448275102016,131072 --disable-features=HistoryManipulationIntervention --enable-blink-features=MediaSourceIsSupportedExtension,MediaTimelineOffset,UMSExtension,PreloadDefaultIsAuto,AudioVideoTrack
+[   44.217887] systemd[1]: Started webos-pro - "bugreportd.service".
+[   44.278581] systemd[5818]: bugreportd.service: Failed to execute command: No such file or directory
+[   44.278729] systemd[5818]: bugreportd.service: Failed at step EXEC spawning /usr/sbin/bugreportd: No such file or directory
+[   44.291300] systemd[1]: bugreportd.service: Main process exited, code=exited, status=203/EXEC
+[   44.291976] systemd[1]: bugreportd.service: Failed with result 'exit-code'.
+[   44.400759] systemd[1]: bugreportd.service: Service RestartSec=100ms expired, scheduling restart.
+[   44.401399] systemd[1]: bugreportd.service: Scheduled restart job, restart counter is at 1.
+[   44.401503] systemd[1]: Stopped webos-pro - "bugreportd.service".
+[   44.449488] systemd[1]: Started webos-pro - "bugreportd.service".
+[   44.454164] systemd[5855]: bugreportd.service: Failed to execute command: No such file or directory
+[   44.454342] systemd[5855]: bugreportd.service: Failed at step EXEC spawning /usr/sbin/bugreportd: No such file or directory
+[   44.469854] systemd[1]: bugreportd.service: Main process exited, code=exited, status=203/EXEC
+[   44.470342] systemd[1]: bugreportd.service: Failed with result 'exit-code'.
+[   44.481162] systemd[5861]: dropbear.service: Failed to execute command: No such file or directory
+[   44.481327] systemd[5861]: dropbear.service: Failed at step EXEC spawning /usr/sbin/dropbear: No such file or directory
+[   44.520794] systemd[1]: dropbear.service: Failed with result 'exit-code'.
+[   44.646130] systemd[1]: bugreportd.service: Service RestartSec=100ms expired, scheduling restart.
+[   44.646734] systemd[1]: bugreportd.service: Scheduled restart job, restart counter is at 2.
+[   44.678467] systemd[1]: Stopped webos-pro - "bugreportd.service".
+[   44.681524] systemd[1]: Started webos-pro - "bugreportd.service".
+[   44.684375] systemd[5881]: bugreportd.service: Failed to execute command: No such file or directory
+[   44.684581] systemd[5881]: bugreportd.service: Failed at step EXEC spawning /usr/sbin/bugreportd: No such file or directory
+[   44.698940] systemd[1]: bugreportd.service: Main process exited, code=exited, status=203/EXEC
+[   44.699499] systemd[1]: bugreportd.service: Failed with result 'exit-code'.
+[   44.819986] systemd[1]: bugreportd.service: Service RestartSec=100ms expired, scheduling restart.
+[   44.820618] systemd[1]: bugreportd.service: Scheduled restart job, restart counter is at 3.
+[   44.861813] systemd[1]: Stopped webos-pro - "bugreportd.service".
+[   44.869246] systemd[1]: Started webos-pro - "bugreportd.service".
+[   44.873778] systemd[5899]: bugreportd.service: Failed to execute command: No such file or directory
+[   44.873956] systemd[5899]: bugreportd.service: Failed at step EXEC spawning /usr/sbin/bugreportd: No such file or directory
+[   44.880644] systemd[1]: bugreportd.service: Main process exited, code=exited, status=203/EXEC
+[   44.881228] systemd[1]: bugreportd.service: Failed with result 'exit-code'.
+[   45.031885] systemd[1]: bugreportd.service: Service RestartSec=100ms expired, scheduling restart.
+[   45.032504] systemd[1]: bugreportd.service: Scheduled restart job, restart counter is at 4.
+[   45.047618] systemd[1]: Stopped webos-pro - "bugreportd.service".
+[   45.052024] systemd[1]: Started webos-pro - "bugreportd.service".
+[   45.066706] systemd[5918]: bugreportd.service: Failed to execute command: No such file or directory
+[   45.066847] systemd[5918]: bugreportd.service: Failed at step EXEC spawning /usr/sbin/bugreportd: No such file or directory
+[   45.092644] systemd[1]: bugreportd.service: Main process exited, code=exited, status=203/EXEC
+[   45.093166] systemd[1]: bugreportd.service: Failed with result 'exit-code'.
+[   45.143121] systemd[5915]: dropbear.service: Failed to execute command: No such file or directory
+[   45.143263] systemd[5915]: dropbear.service: Failed at step EXEC spawning /usr/sbin/dropbear: No such file or directory
+[   45.149454] systemd[1]: dropbear.service: Failed with result 'exit-code'.
+[   45.197849] systemd[1]: bugreportd.service: Service RestartSec=100ms expired, scheduling restart.
+[   45.198421] systemd[1]: bugreportd.service: Scheduled restart job, restart counter is at 5.
+[   45.199186] systemd[1]: Stopped webos-pro - "bugreportd.service".
+[   45.199268] systemd[1]: bugreportd.service: Start request repeated too quickly.
+[   45.199279] systemd[1]: bugreportd.service: Failed with result 'exit-code'.
+[   45.199364] systemd[1]: Failed to start webos-pro - "bugreportd.service".
+[   45.475827] systemd[5981]: dropbear.service: Failed to execute command: No such file or directory
+[   45.475986] systemd[5981]: dropbear.service: Failed at step EXEC spawning /usr/sbin/dropbear: No such file or directory
+[   45.484144] systemd[1]: dropbear.service: Failed with result 'exit-code'.
+[   45.843439] systemd[6083]: dropbear.service: Failed to execute command: No such file or directory
+[   45.843584] systemd[6083]: dropbear.service: Failed at step EXEC spawning /usr/sbin/dropbear: No such file or directory
+[   45.845395] systemd[1]: dropbear.service: Failed with result 'exit-code'.
+[   46.137314] systemd[6129]: dropbear.service: Failed to execute command: No such file or directory
+[   46.137448] systemd[6129]: dropbear.service: Failed at step EXEC spawning /usr/sbin/dropbear: No such file or directory
+[   46.141352] systemd[1]: dropbear.service: Failed with result 'exit-code'.
+[   46.257554] systemd[1]: dropbear.service: Failed with result 'exit-code'.
+[   46.257573] systemd[1]: Failed to start webos - "dropbear.service".
+[   46.961588] systemd[6243]: memchute-ready.service: Executable /home/root/memchute_debug.sh missing, skipping: No such file or directory
+[   52.885332] systemd[1]: livepick.service: Failed with result 'exit-code'.
+[   53.315016] systemd[1]: livepick.service: Failed with result 'exit-code'.
+[   53.691757] systemd[1]: livepick.service: Failed with result 'exit-code'.
+[   53.953069] systemd[1]: livepick.service: Failed with result 'exit-code'.
+[   54.196265] systemd[1]: livepick.service: Failed with result 'exit-code'.
+[   54.310639] systemd[1]: livepick.service: Failed with result 'exit-code'.
+[   54.310656] systemd[1]: Failed to start default - "livepick.service".

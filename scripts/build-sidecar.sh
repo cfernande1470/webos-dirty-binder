@@ -112,3 +112,108 @@ echo "== build android_like_echo_service =="
 "$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_echo_service_static tools/android_like_echo_service.cpp
 file build/android_like_echo_service_static
 ls -lh build/android_like_echo_service_static
+
+echo "== build android_like_callback_service =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_callback_service_static tools/android_like_callback_service.cpp
+file build/android_like_callback_service_static
+ls -lh build/android_like_callback_service_static
+
+echo "== build android_like_callback_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_callback_client_static tools/android_like_callback_client.cpp
+file build/android_like_callback_client_static
+ls -lh build/android_like_callback_client_static
+
+echo "== build android_like_callback_threadpool_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -pthread -o build/android_like_callback_threadpool_client_static tools/android_like_callback_threadpool_client.cpp
+file build/android_like_callback_threadpool_client_static
+ls -lh build/android_like_callback_threadpool_client_static
+
+echo "== build android_like_aidl_service =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_service_static tools/android_like_aidl_service.cpp
+file build/android_like_aidl_service_static
+ls -lh build/android_like_aidl_service_static
+
+echo "== build android_like_aidl_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_client_static tools/android_like_aidl_client.cpp
+file build/android_like_aidl_client_static
+ls -lh build/android_like_aidl_client_static
+
+echo "== build android_like_aidl_stale_handle_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_stale_handle_client_static tools/android_like_aidl_stale_handle_client.cpp
+file build/android_like_aidl_stale_handle_client_static
+ls -lh build/android_like_aidl_stale_handle_client_static
+
+echo "== build android_like_aidl_callback_service =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_callback_service_static tools/android_like_aidl_callback_service.cpp
+file build/android_like_aidl_callback_service_static
+ls -lh build/android_like_aidl_callback_service_static
+
+echo "== build android_like_aidl_callback_threadpool_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -pthread -o build/android_like_aidl_callback_threadpool_client_static tools/android_like_aidl_callback_threadpool_client.cpp
+file build/android_like_aidl_callback_threadpool_client_static
+ls -lh build/android_like_aidl_callback_threadpool_client_static
+
+echo "== build android_like_aidl_listener_registry_service =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_listener_registry_service_static tools/android_like_aidl_listener_registry_service.cpp
+file build/android_like_aidl_listener_registry_service_static
+ls -lh build/android_like_aidl_listener_registry_service_static
+
+echo "== build android_like_aidl_listener_registry_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -pthread -o build/android_like_aidl_listener_registry_client_static tools/android_like_aidl_listener_registry_client.cpp
+file build/android_like_aidl_listener_registry_client_static
+ls -lh build/android_like_aidl_listener_registry_client_static
+
+echo "== build android_like_aidl_negative_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_negative_client_static tools/android_like_aidl_negative_client.cpp
+file build/android_like_aidl_negative_client_static
+ls -lh build/android_like_aidl_negative_client_static
+
+echo "== build android_like_binder_meta_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_binder_meta_client_static tools/android_like_binder_meta_client.cpp
+file build/android_like_binder_meta_client_static
+ls -lh build/android_like_binder_meta_client_static
+
+echo "== build android_like_aidl_binder_return_service =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_binder_return_service_static tools/android_like_aidl_binder_return_service.cpp
+file build/android_like_aidl_binder_return_service_static
+ls -lh build/android_like_aidl_binder_return_service_static
+
+echo "== build android_like_aidl_binder_return_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_binder_return_client_static tools/android_like_aidl_binder_return_client.cpp
+file build/android_like_aidl_binder_return_client_static
+ls -lh build/android_like_aidl_binder_return_client_static
+
+echo "== build android_like_fd_passing_service =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_fd_passing_service_static tools/android_like_fd_passing_service.cpp
+file build/android_like_fd_passing_service_static
+ls -lh build/android_like_fd_passing_service_static
+
+echo "== build android_like_fd_passing_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_fd_passing_client_static tools/android_like_fd_passing_client.cpp
+file build/android_like_fd_passing_client_static
+ls -lh build/android_like_fd_passing_client_static
+
+echo "== build android_like_binder_ping_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_binder_ping_client_static tools/android_like_binder_ping_client.cpp
+file build/android_like_binder_ping_client_static
+ls -lh build/android_like_binder_ping_client_static
+
+echo "== build android_like_aidl_oneway_service =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_oneway_service_static tools/android_like_aidl_oneway_service.cpp
+file build/android_like_aidl_oneway_service_static
+ls -lh build/android_like_aidl_oneway_service_static
+
+echo "== build android_like_aidl_oneway_client =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_like_aidl_oneway_client_static tools/android_like_aidl_oneway_client.cpp
+file build/android_like_aidl_oneway_client_static
+ls -lh build/android_like_aidl_oneway_client_static
+
+echo "== build android_userspace_preflight =="
+"$LITE_CXX" -O2 -static -Wall -Wextra $LITE_UAPI -Itools -o build/android_userspace_preflight_static tools/android_userspace_preflight.cpp
+file build/android_userspace_preflight_static
+ls -lh build/android_userspace_preflight_static
+
+echo "== build fd_scm_rights_preflight =="
+"$LITE_CXX" -O2 -static -Wall -Wextra -o build/fd_scm_rights_preflight_static tools/fd_scm_rights_preflight.cpp
+file build/fd_scm_rights_preflight_static
+ls -lh build/fd_scm_rights_preflight_static
