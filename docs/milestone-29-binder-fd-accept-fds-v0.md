@@ -1,28 +1,23 @@
-# Milestone 29: Binder FD object format probe v0
+# Milestone 29: Binder FD probe after ACCEPT_FDS
 
-Status: unsafe probe, one round only.
+Status: **FAILED / QUARANTINED**
 
-Previous FD result:
+Observed:
 
-    BINDER_TYPE_FD with obj.flags=0 returned BR_FAILED_REPLY
-    service never received transaction
-    TV reboot was observed around the experiment
-    milestone 24 was quarantined
+    BINDER_TYPE_FD transaction with flags=0x100
+    client receives BR_FAILED_REPLY
+    service never receives FD transaction
+    webOS UI became unstable/frozen
+    SSH recovery/reboot was needed
 
-New probe:
+Conclusion:
 
-    BINDER_TYPE_FD
-    obj.flags = FLAT_BINDER_FLAG_ACCEPTS_FDS
-    obj.handle = fd
-    obj.cookie = 0
-    ROUNDS=1 only
+    Binder FD passing is not proven safe on this LG webOS Binder 4.4 path.
+    Do not run FD probes manually without watchdog + debug capture.
 
-Target markers:
+Next diagnostics:
 
-    BINDER_FD_SERVICE_REGISTERED
-    BINDER_FD_OBJECT_SENT
-    BINDER_FD_RECEIVED_OK
-    BINDER_FD_READ_OK
-    BINDER_FD_CLIENT_ROUND_OK
-    BINDER_FD_CLIENT_SMOKE_OK
-    BINDER_FD_SMOKE_TV_OK
+    inspect binder debugfs logs if available
+    verify non-Binder FD passing via SCM_RIGHTS
+    audit service node accept_fds in local Binder object registration
+    test alternate BINDER_TYPE_FD encodings only under timeout/watchdog
