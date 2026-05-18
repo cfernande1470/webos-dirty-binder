@@ -1,30 +1,26 @@
-# webos-dirty-binder — README_V2
+# webos-dirty-binder
 
-> Milestone: **USB-only Android rootfs + Binder con símbolos + `servicemanager` real de Android 13 funcionando en webOS**  
-> Fecha del hito: 2026-05-18  
-> Target probado: LG webOS TV con kernel `4.4.84-229.1.kavir.2` aarch64  
-> Host de control: NanoPi R3S  
-> Objetivo final: ejecutar Android dentro de webOS como una app, sin usar `/media/internal` como almacenamiento principal.
+> Milestone: **USB-only Android rootfs + Binder symbol loader + real Android 13 `servicemanager` running on webOS**  
+> Milestone date: 2026-05-18  
+> Tested target: LG webOS TV, `Linux 4.4.84-229.1.kavir.2`, `aarch64`  
+> Control host: NanoPi R3S  
+> Long-term goal: run Android inside webOS as an app-like sidecar, without relying on `/media/internal`.
 
 ---
 
-## 1. Resumen ejecutivo
+## 1. Executive summary
 
-Este proyecto intenta llevar un entorno Android funcional a una LG webOS TV rooteada. El objetivo no es simplemente montar un `system.img`, sino acercarnos a una ejecución realista de Android dentro de webOS, con Binder funcionando, `servicemanager` real arrancado, rootfs Android en USB y una futura capa de integración para mostrar Android como una aplicación webOS.
+`webos-dirty-binder` is an experimental project for bringing up enough Android userspace on a rooted LG webOS TV to run Android framework components on top of the TV's existing Linux/webOS kernel.
 
-El hito actual es importante porque se ha conseguido algo que llevaba dando vueltas varios días:
+The current milestone is important because the real Android 13 `servicemanager` now runs inside the Android rootfs mounted from USB.
 
-```text
-El servicemanager real de Android 13 arranca y se queda vivo.
-```
-
-No es el `mini_servicemgr` experimental del repo. El binario que arranca es:
+This is **not** the old mini service manager shim. The running binary is the real Android binary from:
 
 ```text
 /tmp/android-usb/android-rootfs/system/bin/servicemanager
 ```
 
-El diagnóstico actual muestra:
+The latest validated diagnostic shows:
 
 ```text
 == running service managers ==
@@ -34,89 +30,99 @@ El diagnóstico actual muestra:
 SERVICEMANAGER_ALREADY_RUNNING=YES
 ```
 
-y el log de instalación confirma:
+The installer log confirms:
 
 ```text
 ANDROID_REAL_SERVICEMANAGER_RUNNING pid=5945
 ANDROID_USB_INSTALL_DONE
 ```
 
-Este hito desbloquea la siguiente fase: `hwbinder`, `hwservicemanager`, linkerconfig, property service y más tarde `zygote`/`system_server`.
+This milestone took a while because the failure looked like a `servicemanager`, FD-passing, Android image, linker, or chroot problem. The actual blocker was lower-level: the dirty Binder module was loading without the hidden kernel symbol addresses it needs for Binder transaction memory mapping and FD handling.
+
+Once those symbols were resolved dynamically from `/proc/kallsyms` and passed into `binder.ko`, Android's real `servicemanager` stopped dying and stayed alive.
 
 ---
 
-## 2. Estado actual del proyecto
+## 2. Current project status
 
-### 2.1 Funciona
+### 2.1 Working
 
-Actualmente funciona lo siguiente:
+The following pieces are currently working:
 
 ```text
-USB ext4 como almacenamiento principal
-Android system.img descargado en USB
-Android vendor.img descargado en USB
-Montaje de system/vendor/apex/data/cache/proc/sys/dev en rootfs Android
-binder.ko cargado en webOS
-/dev/binder creado
-Binder mmap funcionando
-BINDER_SET_CONTEXT_MGR_EXT alcanzado
-/system/bin/toybox ejecuta dentro del chroot
-/system/bin/servicemanager real de Android 13 arranca y queda vivo
+USB ext4 storage
+Android system.img downloaded directly to USB
+Android vendor.img downloaded directly to USB
+Android rootfs assembled under /tmp/android-usb/android-rootfs
+/system mounted from system.img
+/vendor mounted from vendor.img
+/apex mounted from system.img
+/data on USB
+/cache on USB
+/proc mounted
+/sys mounted
+/dev bind-mounted from webOS
+binder.ko loaded on the webOS kernel
+/dev/binder created
+Binder mmap works
+BINDER_SET_CONTEXT_MGR_EXT is reached
+/system/bin/toybox runs inside the Android chroot
+real Android 13 /system/bin/servicemanager starts and remains alive
 ```
 
-El rootfs Android queda en:
+Main rootfs path:
 
 ```text
 /tmp/android-usb/android-rootfs
 ```
 
-Las imágenes quedan en:
+Main image paths:
 
 ```text
 /tmp/android-usb/android-images/system.img
 /tmp/android-usb/android-images/vendor.img
 ```
 
-Los logs y runtime del sidecar quedan en:
+Main logs:
 
 ```text
-/tmp/android-usb/android-sidecar/logs
-/tmp/android-usb/android-sidecar/run
+/tmp/android-usb/android-sidecar/logs/android-usb-install.log
+/tmp/android-usb/android-sidecar/logs/servicemanager.log
 ```
 
-### 2.2 No funciona todavía
+### 2.2 Not working yet
 
-Todavía no funciona:
+The following pieces are still pending:
 
 ```text
 /dev/hwbinder
 /dev/vndbinder
 hwservicemanager
 vndservicemanager
-linkerconfig generado completo
-property service Android
-Android init real o mini-init equivalente
+generated /linkerconfig/ld.config.txt
+Android property service
+real Android init or a controlled mini-init
 zygote
 system_server
 SurfaceFlinger
-renderizado Android dentro de una app webOS
-input/audio/network Android completos
+running Android UI inside a webOS app
+input/audio/network integration
 ```
 
-El fallo actual esperado es:
+The currently expected failure is:
 
 ```text
 HWSERVICEMANAGER_EXITED_QUICKLY=YES
 Binder driver could not be opened. Terminating.
 ```
 
-La causa no es el USB ni `servicemanager`. La causa es que el módulo Binder actual sólo expone:
+This is expected because the current Binder module only exposes:
 
 ```text
 /dev/binder
 ```
 
-y no expone:
+It does not expose:
 
 ```text
 /dev/hwbinder
@@ -125,61 +131,60 @@ y no expone:
 
 ---
 
-## 3. Decisión clave: abandonar `/media/internal`
+## 3. Why everything moved away from `/media/internal`
 
-Inicialmente se usaba `/media/internal` como almacenamiento para parte del sidecar y del entorno Android. Eso no es viable porque en las TVs webOS ese almacenamiento es pequeño y puede llenarse muy rápido.
+Earlier iterations used `/media/internal` for some sidecar and Android files. That is not viable on LG webOS TVs because `/media/internal` is small and can fill up quickly.
 
-Se tomó la decisión de mover **todo** lo relacionado con Android al USB:
+The project now treats USB storage as the only realistic place for Android state:
 
 ```text
-sidecar
+sidecar files
 logs
-binder.ko copiado a la TV
+binder.ko copied to the TV
 system.img
 vendor.img
-descargas temporales
-mountpoints
-rootfs Android
+downloads
+mount points
+Android rootfs
 /data
 /cache
 ```
 
-La ruta lógica estable elegida es:
+The stable logical mount point is:
 
 ```text
 /tmp/android-usb
 ```
 
-Aunque `/tmp` no es persistente, el contenido real vive en el USB. `/tmp/android-usb` es sólo el punto de montaje lógico. Esto evita depender de rutas automáticas de webOS como:
+The actual USB partition may be mounted by webOS somewhere like:
 
 ```text
 /tmp/usb/sda/sda1
 ```
 
-que pueden variar o cambiar entre arranques.
+but the project uses `/tmp/android-usb` as the stable path. This keeps scripts reproducible and avoids chasing webOS automount paths.
 
-### 3.1 Por qué USB ext4
+### 3.1 Why ext4
 
-Se decidió usar ext4 porque Android necesita semántica UNIX real:
+The USB should be ext4 because Android expects real UNIX filesystem behavior:
 
 ```text
-permisos
-owners
+permissions
+ownership
 symlinks
-device-like layout
-archivos grandes
-montajes bind
-loop mounts
-/data y /cache con permisos normales
+large files
+bind mounts
+loop-mounted images
+/data and /cache semantics
 ```
 
-FAT32, exFAT o NTFS pueden servir para transportar imágenes, pero no son una buena base para un rootfs Android persistente.
+FAT32, exFAT, or NTFS may work for carrying raw images, but they are not a good base for persistent Android state.
 
 ---
 
-## 4. Limpieza de scripts
+## 4. Clean script layout
 
-Después del milestone se decidió limpiar el repositorio y quedarse con tres scripts públicos:
+The project has been simplified to three public Android USB scripts:
 
 ```text
 scripts/install-android-usb.sh
@@ -187,74 +192,76 @@ scripts/tail-android-usb.sh
 scripts/diagnose-android-usb.sh
 ```
 
-Esta simplificación es deliberada.
+This is intentional. The previous script set grew organically while debugging. For this milestone, the workflow is clean enough to collapse into three entry points.
 
-### 4.1 install
+### 4.1 `install-android-usb.sh`
 
-```text
-scripts/install-android-usb.sh
-```
+Main installer.
 
-Responsabilidades:
+Responsibilities:
 
 ```text
-leer configs/android-usb.env
-opcionalmente formatear el USB
-montar el USB
-localizar o compilar binder.ko
-copiar binder.ko a la TV
-descargar system.zip/vendor.zip si faltan
-extraer system.img/vendor.img
-cargar binder.ko con símbolos kernel
-crear/fijar /dev/binder
-montar rootfs Android
-ejecutar test de toybox
-arrancar servicemanager real de Android
+read configs/android-usb.env
+optionally format the USB partition
+mount the USB at /tmp/android-usb
+locate or build binder.ko
+copy binder.ko to the TV
+download Android system/vendor images if missing
+extract system.img and vendor.img
+resolve required kernel symbols from /proc/kallsyms
+load binder.ko with those symbols
+create/fix /dev/binder
+mount the Android rootfs
+run a toybox smoke test
+start the real Android /system/bin/servicemanager
 ```
 
-### 4.2 tail
+### 4.2 `tail-android-usb.sh`
 
-```text
-scripts/tail-android-usb.sh
-```
+Remote log tail helper.
 
-Responsabilidad:
-
-```text
-hacer tail -F del log de instalación remoto
-```
-
-Log principal:
+It tails:
 
 ```text
 /tmp/android-usb/android-sidecar/logs/android-usb-install.log
 ```
 
-### 4.3 diagnose
+Usage:
 
-```text
-scripts/diagnose-android-usb.sh
+```sh
+TV_IP=192.168.2.121 ./scripts/tail-android-usb.sh
 ```
 
-Responsabilidades:
+### 4.3 `diagnose-android-usb.sh`
+
+Diagnostic script.
+
+It reports:
 
 ```text
-mostrar kernel
-mostrar mounts USB/Android
-mostrar dispositivos Binder
-mostrar parámetros del módulo binder
-mostrar build props Android
-mostrar binarios clave
-probar getprop
-ver si servicemanager está corriendo
-probar hwservicemanager
-mostrar tail del log de instalación
-mostrar dmesg Binder
+kernel version
+USB and Android mounts
+Binder devices
+Binder module parameters
+Android build props
+key Android binaries
+getprop behavior
+running service managers
+servicemanager status
+hwservicemanager status
+install log tail
+Binder-related dmesg tail
 ```
 
-### 4.4 Scripts antiguos eliminables
+Usage:
 
-Se consideran reemplazados u obsoletos:
+```sh
+TV_IP=192.168.2.121 ./scripts/diagnose-android-usb.sh
+```
+
+### 4.4 Old scripts replaced by the clean flow
+
+The following older helper scripts are considered obsolete or replaced:
 
 ```text
 ensure-android-usb-mounted-tv.sh
@@ -271,28 +278,28 @@ apply-usb-only-migration.sh
 apply-usb-safety-guards.sh
 ```
 
-Algunos scripts de build sí conviene conservar:
+Build scripts should be kept if present:
 
 ```text
 scripts/build-module.sh
 scripts/build-sidecar.sh
 ```
 
-`build-module.sh` sigue siendo necesario para compilar `binder.ko`.
+`build-module.sh` is still required for rebuilding `binder.ko`.
 
-`build-sidecar.sh` ya no es obligatorio para la instalación limpia actual. Puede conservarse como herramienta de debug o para futuros tests Binder/FD, pero el instalador principal ya no debe depender de copiar `android_like*`, `mini_servicemgr` u otros binarios estáticos.
+`build-sidecar.sh` is no longer required for the clean Android USB installation path. It can remain as a debugging or test utility, especially for future Binder/FD tests, but the main installer should not depend on copying `android_like*`, `mini_servicemgr`, or old static helper binaries.
 
 ---
 
-## 5. Configuración
+## 5. Configuration
 
-Archivo principal:
+Main config file:
 
 ```text
 configs/android-usb.env
 ```
 
-Ejemplo:
+Typical configuration:
 
 ```sh
 TV_IP="192.168.2.121"
@@ -317,19 +324,19 @@ VENDOR_ZIP_URL="https://sourceforge.net/projects/waydroid/files/images/vendor/wa
 
 ---
 
-## 6. Compilación desde cero
+## 6. Building from scratch
 
-Para este milestone, lo único imprescindible de compilar es:
+For the current milestone, the only required build artifact is:
 
 ```text
 binder.ko
 ```
 
-`build-sidecar.sh` no es obligatorio para instalar Android USB ni para arrancar el `servicemanager` real.
+The sidecar static binaries are optional.
 
-### 6.1 Limpieza segura
+### 6.1 Safe cleanup
 
-No borrar el árbol entero del kernel si ya está preparado. Basta con limpiar artefactos:
+Do not delete the prepared kernel tree unless you really want to rebuild everything from scratch. A safe cleanup is:
 
 ```sh
 cd /home/pi/disk/webos-dirty-binder
@@ -345,58 +352,58 @@ find build -type f \( \
 \) -delete 2>/dev/null || true
 ```
 
-### 6.2 Compilar binder.ko
+### 6.2 Build Binder
 
 ```sh
 chmod +x scripts/*.sh
 ./scripts/build-module.sh
 ```
 
-Verificar:
+Verify:
 
 ```sh
 ls -lh build/linux-4.4.84/drivers/android/binder.ko
 modinfo build/linux-4.4.84/drivers/android/binder.ko 2>/dev/null || true
 ```
 
-### 6.3 No compilar sidecar salvo debug
+### 6.3 `build-sidecar.sh` is optional
 
-No hace falta:
+The clean USB Android path does not require:
 
 ```sh
 ./scripts/build-sidecar.sh
 ```
 
-Sólo usarlo si se quieren herramientas auxiliares, tests Binder o binarios estáticos para depuración.
+Use it only for debugging tools, experimental Binder clients, FD-passing tests, or old sidecar helpers.
 
 ---
 
-## 7. Instalación normal
+## 7. Installation
 
-Desde la NanoPi:
+### 7.1 Normal installation
+
+From the NanoPi:
 
 ```sh
 cd /home/pi/disk/webos-dirty-binder
 TV_IP=192.168.2.121 ./scripts/install-android-usb.sh
 ```
 
-Ver progreso:
+Tail progress:
 
 ```sh
 TV_IP=192.168.2.121 ./scripts/tail-android-usb.sh
 ```
 
-Diagnóstico:
+Run diagnostics:
 
 ```sh
 TV_IP=192.168.2.121 ./scripts/diagnose-android-usb.sh
 ```
 
----
+### 7.2 Format USB and install
 
-## 8. Instalación formateando USB
-
-Formatear es destructivo y requiere confirmación explícita.
+Formatting is destructive and requires explicit confirmation:
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -406,13 +413,15 @@ CONFIRM_FORMAT_ANDROID_USB=YES \
 ./scripts/install-android-usb.sh
 ```
 
-Si el formateo falla con:
+If formatting fails with:
 
 ```text
 /dev/sda1 is apparently in use by the system; will not make a filesystem here!
 ```
 
-significa que webOS o algún loop mount todavía tiene la partición montada. Hay que desmontar en orden:
+then webOS, a loop mount, or a previous Android mount is still using the USB partition.
+
+The installer must unmount, deepest first:
 
 ```text
 android-rootfs/dev
@@ -430,13 +439,13 @@ android-mounts/system_raw
 /tmp/usb/sda/sda1
 ```
 
-El instalador debe ser conservador: si queda algo montado, no debe intentar `mkfs`.
+If anything remains mounted, the installer should refuse to run `mkfs`.
 
 ---
 
-## 9. Layout del USB
+## 8. USB directory layout
 
-Después de instalar:
+After installation:
 
 ```text
 /tmp/android-usb/
@@ -481,91 +490,96 @@ Después de instalar:
 
 ---
 
-## 10. Android images
+## 9. Android images
 
-Se están usando imágenes Waydroid/Lineage Android 13 arm64-only:
+The current default images are Waydroid/Lineage Android 13 arm64-only images:
 
 ```text
 lineage-20.0-20260403-VANILLA-waydroid_arm64_only-system.zip
 lineage-20.0-20260403-MAINLINE-waydroid_arm64_only-vendor.zip
 ```
 
-El motivo de usar Waydroid/Lineage es pragmático:
+The reasons for using these images are pragmatic:
 
 ```text
-imágenes Android ya separadas en system/vendor
-formato manejable
-Android 13 moderno
-arm64-only compatible con el target aarch64
-suficientemente estándar para probar Binder/servicemanager
+they provide separate system/vendor images
+they are easy to download and extract
+they are Android 13
+they are arm64-only, matching the aarch64 target
+they are standard enough for Binder and servicemanager bring-up
 ```
 
-El instalador descarga los zip, extrae:
+The installer downloads the zip files, extracts:
 
 ```text
 system.img
 vendor.img
 ```
 
-y monta ambas imágenes en loop:
+and mounts them with loop devices:
 
 ```text
 /tmp/android-usb/android-mounts/system_raw
 /tmp/android-usb/android-mounts/vendor_raw
 ```
 
-Luego crea el rootfs Android mediante bind mounts.
+The rootfs is then assembled using bind mounts.
 
 ---
 
-## 11. El problema de servicemanager
+## 10. The servicemanager problem
 
-### 11.1 Síntoma inicial
+This was the major debugging milestone.
 
-Durante días el `servicemanager` no arrancaba. Primero parecía que el problema podía estar en:
+### 10.1 Initial symptom
+
+The real Android `servicemanager` would not start.
+
+At different points the likely cause looked like one of these:
 
 ```text
-el USB
-el chroot
-linkerconfig
-FD passing
-servicemanager incompatible
-el mini service manager
-permisos de /dev/binder
+bad USB storage
+bad chroot
+missing linkerconfig
+FD-passing bug
+wrong servicemanager binary
+old mini service manager conflict
+/dev/binder permissions
+incompatible Android image
 ```
 
-Pero los logs fueron reduciendo el problema.
+The logs eventually narrowed it down.
 
-El primer bloqueo era:
+The first failure was:
 
 ```text
 Binder driver '/dev/binder' could not be opened.
 Opening '/dev/binder' failed: No such file or directory
 ```
 
-Eso significaba que el instalador no estaba cargando Binder ni creando `/dev/binder`.
+This meant the installer was not loading Binder or creating `/dev/binder`.
 
-Se corrigió añadiendo carga de `binder.ko` y creación de `/dev/binder`.
+That was fixed by loading `binder.ko` and creating `/dev/binder`.
 
-### 11.2 Segundo bloqueo: Binder existía pero mmap fallaba
+### 10.2 Second failure: Binder existed but mmap failed
 
-Después de cargar Binder apareció:
+After Binder was loaded, the failure became:
 
 ```text
 Binder driver '/dev/binder' could not be opened.
 Using /dev/binder failed: unable to mmap transaction memory.
 ```
 
-y en `dmesg`:
+Kernel log:
 
 ```text
 binder_dirty: missing address for get_vm_area
 binder_mmap ... get_vm_area failed -12
 ```
 
-Esto fue el punto clave.
+This was the key discovery.
 
-El módulo `binder.ko` cargaba, pero estaba cargando con símbolos internos a cero:
+The dirty Binder module was loading, but its required kernel symbol parameters were zero:
 
 ```text
 sym_get_vm_area=0
@@ -579,11 +593,13 @@ sym_put_files_struct=0
 sym___lock_task_sighand=0
 ```
 
-El driver Binder dirty necesita esos símbolos porque está adaptándose a un kernel webOS 4.4 cerrado/limitado, y algunas APIs internas necesarias no están exportadas de forma normal para módulos.
+The module needs those internal kernel symbols because it is adapting Binder behavior to the LG webOS 4.4 kernel, where some APIs needed by the dirty Binder shim are not exported normally to modules.
 
-### 11.3 Descubrimiento: /proc/kallsyms tenía las direcciones
+### 10.3 `/proc/kallsyms` had the answer
 
-Se comprobó en la TV:
+The TV exposes the required addresses through `/proc/kallsyms`.
+
+Command used:
 
 ```sh
 ssh root@192.168.2.121 'sh -s' <<'TVSH'
@@ -608,7 +624,7 @@ done
 TVSH
 ```
 
-Resultado observado:
+Observed values:
 
 ```text
 get_vm_area              ffffffc0001a28c0
@@ -622,11 +638,11 @@ put_files_struct         ffffffc0001e3078
 __lock_task_sighand      ffffffc0000b3290
 ```
 
-Por tanto no hacía falta `System.map` externo. El propio kernel en ejecución exponía lo necesario.
+This meant no external `System.map` was required for this target. The running kernel already exposed what we needed.
 
-### 11.4 Solución
+### 10.4 Fix
 
-El instalador ahora resuelve esos símbolos dinámicamente:
+The installer now resolves kernel symbols dynamically:
 
 ```sh
 ksym() {
@@ -634,7 +650,7 @@ ksym() {
 }
 ```
 
-y carga Binder así:
+Then it loads Binder with module parameters:
 
 ```sh
 insmod "$ANDROID_BINDER_KO" \
@@ -649,22 +665,25 @@ insmod "$ANDROID_BINDER_KO" \
   sym___lock_task_sighand="$LOCK_TASK_SIGHAND"
 ```
 
-En el script real esto se construye como lista dinámica de parámetros.
+In the clean script this is built dynamically, but the effect is the same.
 
-### 11.5 Resultado
+### 10.5 Result
 
-Después de cargar Binder con símbolos:
+With symbols loaded, the module parameters become non-zero:
 
 ```text
-sym_get_vm_area != 0
-sym___alloc_fd != 0
-sym___fd_install != 0
-sym___close_fd != 0
+sym_get_vm_area              != 0
+sym_map_kernel_range_noflush != 0
+sym_zap_page_range           != 0
+sym___alloc_fd               != 0
+sym___fd_install             != 0
+sym___close_fd               != 0
+sym_get_files_struct         != 0
+sym_put_files_struct         != 0
+sym___lock_task_sighand      != 0
 ```
 
-`servicemanager` deja de morir en `mmap()`.
-
-El log de instalación muestra:
+The install log shows:
 
 ```text
 ANDROID_BINDER_SYM sym_get_vm_area=0xffffffc0001a28c0
@@ -679,7 +698,7 @@ ANDROID_BINDER_SYM sym___lock_task_sighand=0xffffffc0000b3290
 ANDROID_BINDER_READY
 ```
 
-y finalmente:
+Then:
 
 ```text
 ANDROID_REAL_SERVICEMANAGER_RUNNING pid=5945
@@ -688,46 +707,52 @@ ANDROID_USB_INSTALL_DONE
 
 ---
 
-## 12. Por qué sabemos que es el servicemanager real
+## 11. Why this is the real Android servicemanager
 
-Porque el binario verificado por diagnóstico está en:
+Diagnostics show the Android binary exists at:
 
 ```text
 /tmp/android-usb/android-rootfs/system/bin/servicemanager
 ```
 
-El diagnóstico muestra:
+with:
 
 ```text
 --- /system/bin/servicemanager
 -rwxr-xr-x    1 root     2000         67824 Apr  3 07:37 /tmp/android-usb/android-rootfs/system/bin/servicemanager
 ```
 
-y el proceso vivo es:
+The running process is:
 
 ```text
 5945 ?        00:00:00 servicemanager
 ```
 
-No se está ejecutando el `mini_servicemgr` del repo. De hecho, el flujo limpio ya no necesita copiar binarios `android_like*` ni shims antiguos para arrancar el manager real.
+The mini service manager shim is not part of the clean runtime path.
 
-Además, en `dmesg` aparece:
+The Binder log also shows the modern context-manager path:
 
 ```text
 DIRTY_BINDER_IOCTL_COMPAT_V0 set context mgr ext type=0x0 flags=0x0
 ```
 
-Eso confirma que el binario real está llegando al punto crítico de registrarse como Binder context manager usando el ioctl moderno/ext.
+That confirms the real Android binary reaches the Binder context manager registration path.
 
 ---
 
-## 13. Binder y FD passing
+## 12. Binder and FD passing
 
-Al principio se sospechaba que el problema de FD y el problema de `servicemanager` podían estar relacionados. La sospecha era correcta, pero el orden era importante.
+At the beginning, it was reasonable to suspect that the FD issue and the `servicemanager` issue were related.
 
-`servicemanager` no estaba fallando por FD passing todavía. Fallaba antes, en Binder `mmap()`, porque `sym_get_vm_area` estaba a cero.
+They were related, but the ordering mattered.
 
-Sin embargo, los símbolos de FD también son importantes:
+`servicemanager` was not failing because of FD passing yet. It was failing earlier, at Binder `mmap()`, because:
+
+```text
+sym_get_vm_area=0
+```
+
+However, the FD-related symbols are also important:
 
 ```text
 sym___alloc_fd
@@ -737,165 +762,253 @@ sym_get_files_struct
 sym_put_files_struct
 ```
 
-Si esos símbolos están a cero, el paso de file descriptors por Binder probablemente fallará más adelante. Ahora están cargando correctamente.
+If those remain zero, Binder FD passing will likely fail later.
 
-Esto no prueba que FD passing funcione al 100 %, pero sí elimina el fallo obvio anterior.
+The current milestone loads them as non-zero values. That does not prove FD passing is fully correct, but it removes the obvious failure mode.
 
-Milestone futuro:
+Future test:
 
 ```text
-crear test cliente/servidor Binder que envíe un FD real
-validar BINDER_TYPE_FD / BINDER_TYPE_FDA
-validar cierre/instalación correcta del FD en proceso destino
+create a minimal Binder client/server pair
+send a real FD, such as a pipe or /dev/null
+validate the destination process receives a usable FD
+validate close/lifetime behavior
+watch dmesg for Binder errors
 ```
 
 ---
 
-## 14. Por qué no se debe falsificar hwbinder
+## 13. Why `/dev/hwbinder` must not be faked
 
-El módulo actual sólo registra:
+The current Binder module only registers:
 
 ```text
 53 binder
 /dev/binder
 ```
 
-El log indica:
+The kernel log says:
 
 ```text
 binder: unknown parameter 'devices' ignored
 ```
 
-Eso significa que este módulo no soporta:
+So this module does not support:
 
 ```text
 devices=binder,hwbinder,vndbinder
 ```
 
-Se podría intentar crear:
+It may be tempting to create:
 
 ```sh
 ln -s /dev/binder /dev/hwbinder
 ```
 
-o un `mknod` con el mismo major/minor, pero es una mala idea.
+or to create `/dev/hwbinder` with the same major/minor as `/dev/binder`.
 
-Android moderno separa dominios Binder:
+Do not do that.
+
+Modern Android uses separate Binder domains:
 
 ```text
-/dev/binder      -> framework servicemanager
-/dev/hwbinder    -> HAL/hwservicemanager
-/dev/vndbinder   -> vendor binder domain
+/dev/binder      -> framework Binder domain
+/dev/hwbinder    -> HAL Binder domain
+/dev/vndbinder   -> vendor Binder domain
 ```
 
-`servicemanager` y `hwservicemanager` son context managers distintos. Si ambos usan el mismo dispositivo Binder, compiten por el mismo context manager y el resultado será incorrecto.
+`servicemanager` and `hwservicemanager` need separate Binder context managers. If both talk to the same underlying Binder device, they collide conceptually and practically.
 
-La solución real es parchear o reemplazar `binder.ko` para registrar múltiples dispositivos Binder independientes.
+The correct fix is to patch or replace `binder.ko` so that it registers multiple independent Binder devices.
+
+---
+
+## 14. Current `hwservicemanager` status
+
+Current diagnostic:
+
+```text
+== hwservicemanager one-shot test ==
+HWSERVICEMANAGER_EXITED_QUICKLY=YES
+Binder driver could not be opened. Terminating.
+```
+
+This is expected until `/dev/hwbinder` exists as a real Binder device.
+
+This is now the next major kernel-side milestone.
 
 ---
 
 ## 15. Linkerconfig
 
-El warning actual es:
+Current warning:
 
 ```text
 linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
 ```
 
-De momento no bloquea:
+This currently does not block:
 
 ```text
 /system/bin/toybox
 /system/bin/servicemanager
 ```
 
-Pero sí será importante para fases posteriores.
+But it will matter later for richer Android userspace.
 
-Android moderno usa `linkerconfig` para generar configuración dinámica del linker basada en APEX, particiones y namespaces. Para `zygote`, `system_server`, HALs y servicios más complejos, habrá que resolverlo.
-
-El rootfs ya incluye:
+The rootfs contains:
 
 ```text
 /apex/com.android.runtime/bin/linkerconfig
 /system/bin/linkerconfig -> /apex/com.android.runtime/bin/linkerconfig
 ```
 
-y se crea el directorio:
+and the installer creates:
 
 ```text
 /tmp/android-usb/android-rootfs/linkerconfig
 ```
 
-Milestone futuro:
+Future work:
 
 ```text
-generar /linkerconfig/ld.config.txt correctamente
-montar/bindear linkerconfig de forma compatible
-proporcionar propiedades mínimas que linkerconfig espera
+generate /linkerconfig/ld.config.txt properly
+bind-mount /linkerconfig in the expected place
+provide the properties linkerconfig expects
+validate more complex dynamically linked binaries
 ```
 
 ---
 
-## 16. Property service y getprop
+## 16. Property service and getprop
 
-`getprop` actualmente muestra warning y no devuelve versión:
+Current behavior:
 
 ```text
 chroot getprop
 linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
 ```
 
-Esto no significa que Android esté roto. Significa que aún no está corriendo el property service de Android.
-
-El binario `getprop` existe:
+`getprop` exists:
 
 ```text
 /system/bin/getprop -> toolbox
 ```
 
-pero sin `init`/property service no tiene un entorno Android completo del que leer propiedades.
+but Android's property service is not running yet. Therefore `getprop` does not behave like it would in a full Android boot.
 
-Milestone futuro:
+Future work:
 
 ```text
-implementar property service mínimo
-o arrancar una parte controlada de Android init
-o inyectar propiedades estáticas suficientes para linkerconfig y servicios base
+provide a minimal property service
+or start the relevant part of Android init
+or inject enough static properties for linkerconfig and core services
+```
+
+A good future success criterion:
+
+```text
+getprop ro.build.version.release
+13
 ```
 
 ---
 
-## 17. SELinux, namespaces y cgroups
+## 17. SELinux, namespaces, cgroups and init
 
-Este milestone no ha resuelto todavía:
+This milestone does not solve:
 
 ```text
-SELinux Android
-cgroups Android
-pid namespaces
+Android SELinux
+Android cgroups
+PID namespaces
 mount namespaces
-net namespaces
+network namespaces
 binderfs
-ashmem/memfd strategy
+ashmem/memfd policy
+full Android init
 ```
 
-Para arrancar `servicemanager` no han sido el primer bloqueo. Para Android completo sí lo serán.
+That was intentional. Trying to solve those before Binder and `servicemanager` would make debugging too broad.
 
-Decisión actual:
+Current strategy:
 
 ```text
-no resolver SELinux antes de Binder básico
-no resolver zygote antes de hwbinder/linkerconfig/property service
-no intentar system_server hasta tener servicios base Android coherentes
+first prove USB rootfs
+then prove Binder
+then prove real servicemanager
+then add hwbinder/vndbinder
+then solve linkerconfig/property/init
+then approach zygote/system_server
 ```
 
 ---
 
-## 18. Milestones siguientes hacia Android como app webOS
+## 18. Validated diagnostic snapshot
 
-### Milestone 1 — Binder multi-device
+The current validated state includes:
 
-Objetivo:
+```text
+/dev/sda1 /tmp/android-usb ext4 rw
+/dev/loop3 /tmp/android-usb/android-mounts/system_raw ext4 ro
+/dev/loop4 /tmp/android-usb/android-mounts/vendor_raw ext4 ro
+/dev/loop3 /tmp/android-usb/android-rootfs/system ext4 ro
+/dev/loop4 /tmp/android-usb/android-rootfs/vendor ext4 ro
+/dev/loop3 /tmp/android-usb/android-rootfs/apex ext4 ro
+/dev/sda1 /tmp/android-usb/android-rootfs/data ext4 rw
+/dev/sda1 /tmp/android-usb/android-rootfs/cache ext4 rw
+proc /tmp/android-usb/android-rootfs/proc proc rw
+sysfs /tmp/android-usb/android-rootfs/sys sysfs rw
+devtmpfs /tmp/android-usb/android-rootfs/dev devtmpfs rw
+```
+
+Binder:
+
+```text
+53 binder
+crw-rw-rw- 1 root root 10, 53 /dev/binder
+binder module loaded
+sym_get_vm_area != 0
+sym___alloc_fd != 0
+sym___fd_install != 0
+sym___close_fd != 0
+sym_get_files_struct != 0
+sym_put_files_struct != 0
+```
+
+Android:
+
+```text
+ro.build.version.release=13
+/system/bin/servicemanager exists
+/system/bin/hwservicemanager exists
+/system/bin/toybox exists
+```
+
+Runtime:
+
+```text
+servicemanager running
+hwservicemanager fails because /dev/hwbinder is missing
+```
+
+Installer success:
+
+```text
+ANDROID_BINDER_READY
+ANDROID_USB_ROOTFS_READY
+ANDROID_USB_TOYBOX_OK
+ANDROID_REAL_SERVICEMANAGER_RUNNING
+ANDROID_USB_INSTALL_DONE
+```
+
+---
+
+## 19. Next milestones toward Android as a webOS app
+
+### Milestone 1 — Binder multi-device support
+
+Goal:
 
 ```text
 /dev/binder
@@ -903,297 +1016,296 @@ Objetivo:
 /dev/vndbinder
 ```
 
-Tareas:
+Tasks:
 
 ```text
-parchear binder.ko para registrar varios misc devices
-mantener context managers separados
-hacer que devices=binder,hwbinder,vndbinder no sea ignorado
-probar servicemanager en /dev/binder
-probar hwservicemanager en /dev/hwbinder
-probar vndbinder si la imagen lo requiere
+patch binder.ko to register multiple independent misc devices
+preserve separate context managers
+make devices=binder,hwbinder,vndbinder work
+test servicemanager on /dev/binder
+test hwservicemanager on /dev/hwbinder
+test vndbinder if required by the image
 ```
 
-Criterio de éxito:
+Success criteria:
 
 ```text
-servicemanager RUNNING
-hwservicemanager RUNNING
-no symlinks falsos
-dmesg sin choques de context manager
+servicemanager running
+hwservicemanager running
+no fake symlinks
+no context-manager collision
 ```
 
-### Milestone 2 — FD passing test
+### Milestone 2 — Binder FD-passing validation
 
-Objetivo:
+Goal:
 
 ```text
-validar paso de file descriptors por Binder
+prove Binder FD passing works
 ```
 
-Tareas:
+Tasks:
 
 ```text
-crear test Binder cliente/servidor mínimo
-enviar pipe o /dev/null por Binder
-verificar que el proceso destino recibe un FD válido
-verificar cierre y lifecycle
+build minimal Binder client/server test
+send a pipe or /dev/null FD
+verify the target process receives a valid FD
+verify lifecycle and close behavior
+watch dmesg for Binder errors
 ```
 
-Criterio de éxito:
+Success criteria:
 
 ```text
-BINDER_TYPE_FD funciona
-BINDER_TYPE_FDA si aplica funciona
-sin leaks obvios
-sin crashes kernel
+BINDER_TYPE_FD works
+BINDER_TYPE_FDA works if used by the image
+no obvious leaks
+no kernel crash
 ```
 
-### Milestone 3 — linkerconfig mínimo
+### Milestone 3 — linkerconfig
 
-Objetivo:
+Goal:
 
 ```text
-eliminar warning /linkerconfig/ld.config.txt
+generate /linkerconfig/ld.config.txt
 ```
 
-Tareas:
+Tasks:
 
 ```text
-ejecutar linkerconfig dentro del rootfs
-proporcionar propiedades necesarias
-montar /linkerconfig correctamente
-validar binarios dinámicos más complejos
+run linkerconfig inside the rootfs
+provide required properties
+mount /linkerconfig correctly
+validate dynamic linker namespaces
 ```
 
-Criterio de éxito:
+Success criteria:
 
 ```text
-getprop/toybox/servicemanager sin warning de linkerconfig
-ld.config.txt generado
+no linkerconfig warning for core binaries
+ld.config.txt exists
+more complex Android binaries run
 ```
 
-### Milestone 4 — property service mínimo
+### Milestone 4 — property service
 
-Objetivo:
+Goal:
 
 ```text
-getprop funcional
+getprop works
 ```
 
-Tareas:
+Tasks:
 
 ```text
-arrancar property service Android o equivalente mínimo
-preparar default.prop/build.prop/vendor props
-exponer socket/property area esperada
+start Android property service or a minimal equivalent
+load build.prop/vendor props
+provide property area/socket expected by Android
 ```
 
-Criterio de éxito:
+Success criteria:
 
 ```text
 getprop ro.build.version.release -> 13
-servicios base pueden leer propiedades
+core services can read required properties
 ```
 
 ### Milestone 5 — init strategy
 
-Objetivo:
+Goal:
 
 ```text
-decidir si arrancar Android init real o un mini-init controlado
+decide between real Android init, mini-init, or hybrid
 ```
 
-Opciones:
+Options:
 
 ```text
-Android init real dentro de entorno controlado
-mini-init propio que arranque sólo servicios necesarios
-modelo híbrido
+real Android init in a controlled environment
+custom mini-init that starts only required services
+hybrid approach
 ```
 
-Decisión probable:
+Likely path:
 
 ```text
-mini-init primero para mantener control
-Android init real después si el entorno kernel/userspace lo permite
+mini-init first
+real init later if kernel/userspace compatibility allows it
 ```
 
-### Milestone 6 — HAL y hwservicemanager
+### Milestone 6 — HAL layer
 
-Objetivo:
+Goal:
 
 ```text
-HAL layer mínima viva
+minimal HAL layer alive
 ```
 
-Tareas:
+Tasks:
 
 ```text
-hwservicemanager funcionando
-servicios HAL mínimos
-revisar vendor.img
-decidir qué HALs son necesarias y cuáles se pueden stubear
+make hwservicemanager run
+inspect vendor.img services
+start only essential HAL services
+stub unsupported hardware if needed
 ```
 
-Criterio de éxito:
+Success criteria:
 
 ```text
-lshal o equivalente muestra servicios básicos
-hwservicemanager estable
+hwservicemanager remains alive
+basic HAL service list works
 ```
 
 ### Milestone 7 — zygote
 
-Objetivo:
+Goal:
 
 ```text
-arrancar zygote
+start zygote64
 ```
 
-Requisitos previos:
+Prerequisites:
 
 ```text
 Binder base
-hwbinder si requerido
+hwbinder if needed
 linkerconfig
 property service
-cgroups/namespaces mínimos
+minimal cgroups/namespaces
 SELinux strategy
-filesystem Android coherente
 ```
 
-Criterio de éxito:
+Success criteria:
 
 ```text
-zygote64 vivo
-app_process ejecutando
-sin crash inmediato por linker/property/cgroup
+zygote64 remains alive
+app_process runs
+no immediate linker/property/cgroup crash
 ```
 
 ### Milestone 8 — system_server
 
-Objetivo:
+Goal:
 
 ```text
-system_server vivo
+system_server remains alive
 ```
 
-Este es uno de los hitos más difíciles.
-
-Tareas:
+Tasks:
 
 ```text
-resolver servicios Java framework
-resolver permisos
-resolver sockets y dirs runtime
-resolver binder calls iniciales
-stubear hardware no disponible
+resolve Java framework services
+resolve permissions and runtime directories
+resolve sockets
+stub or provide missing hardware services
+debug early Binder calls
 ```
 
-Criterio de éxito:
+Success criteria:
 
 ```text
-system_server queda vivo más de 30-60s
-servicios framework básicos registrados
+system_server survives more than 30-60 seconds
+framework services start registering
 ```
 
-### Milestone 9 — gráficos
+### Milestone 9 — graphics
 
-Objetivo:
+Goal:
 
 ```text
-renderizar Android dentro de webOS
+render Android somewhere visible from webOS
 ```
 
-Opciones posibles:
+Possible approaches:
 
 ```text
-SurfaceFlinger + backend adaptado
-render headless + streaming a app webOS
-Wayland/WAM bridge si viable
-EGL/GLES directo si las librerías de la TV permiten
-framebuffer/texture bridge experimental
+SurfaceFlinger with adapted backend
+headless rendering plus stream/buffer bridge
+Wayland/WAM bridge if available
+EGL/GLES direct integration if webOS libraries allow it
+experimental framebuffer or texture bridge
 ```
 
-Decisión probable inicial:
+Likely first path:
 
 ```text
-empezar con render headless o buffer bridge controlado
-después integrar con una app webOS
+headless or buffer bridge first
+webOS app integration later
 ```
 
-### Milestone 10 — app webOS wrapper
+### Milestone 10 — webOS app wrapper
 
-Objetivo:
+Goal:
 
 ```text
-Android visible como aplicación webOS
+launch Android as a webOS app-like experience
 ```
 
-Tareas:
+Tasks:
 
 ```text
-crear app webOS launcher
-crear servicio nativo o bridge que arranque/paré Android sidecar
-mostrar superficie Android
-inyectar input remoto/teclado/ratón
-manejar lifecycle pause/resume/stop
-logs y watchdog
+create a webOS launcher app
+create native/service bridge to start and stop Android sidecar
+display Android output
+inject remote-control/keyboard/mouse input
+handle app lifecycle: start, pause, resume, stop
+provide logs and watchdog
 ```
 
-Criterio de éxito:
+Success criteria:
 
 ```text
-se abre una app webOS
-la app muestra la UI Android o una app Android concreta
-el mando/control remoto envía input
-se puede cerrar limpiamente
+a webOS app launches
+Android UI or a chosen Android app is visible
+input reaches Android
+shutdown is clean
 ```
 
-### Milestone 11 — empaquetado IPK
+### Milestone 11 — IPK packaging
 
-Objetivo:
+Goal:
 
 ```text
-instalación reproducible desde webOS
+reproducible install from webOS
 ```
 
-Tareas:
+Tasks:
 
 ```text
-empaquetar scripts
-detectar USB
-instalar binder.ko
-descargar imágenes
-crear icono/app webOS
-crear logs visibles
-fallback/recovery
+package scripts
+detect USB
+install/load binder.ko
+download images
+create launcher icon
+provide logs
+provide recovery/fallback path
 ```
 
 ---
 
-## 19. Comandos útiles actuales
+## 20. Useful commands
 
-### Instalar
+Install:
 
 ```sh
 TV_IP=192.168.2.121 ./scripts/install-android-usb.sh
 ```
 
-### Ver progreso
+Tail progress:
 
 ```sh
 TV_IP=192.168.2.121 ./scripts/tail-android-usb.sh
 ```
 
-### Diagnosticar
+Diagnose:
 
 ```sh
 TV_IP=192.168.2.121 ./scripts/diagnose-android-usb.sh
 ```
 
-### Formatear e instalar
+Format and install:
 
 ```sh
 TV_IP=192.168.2.121 \
@@ -1203,7 +1315,7 @@ CONFIRM_FORMAT_ANDROID_USB=YES \
 ./scripts/install-android-usb.sh
 ```
 
-### Comprobar símbolos Binder en la TV
+Check Binder symbols:
 
 ```sh
 ssh root@192.168.2.121 'sh -s' <<'TVSH'
@@ -1229,80 +1341,22 @@ TVSH
 
 ---
 
-## 20. Estado validado por diagnóstico
+## 21. Git workflow for this milestone
 
-Último estado validado:
-
-```text
-/dev/sda1 /tmp/android-usb ext4 rw
-system_raw mounted
-vendor_raw mounted
-android-rootfs/system mounted
-android-rootfs/vendor mounted
-android-rootfs/apex mounted
-android-rootfs/data ext4 rw
-android-rootfs/cache ext4 rw
-proc mounted
-sysfs mounted
-devtmpfs bind mounted
-```
-
-Binder:
-
-```text
-53 binder
-/dev/binder exists
-binder module loaded
-sym_get_vm_area != 0
-sym___alloc_fd != 0
-sym___fd_install != 0
-sym___close_fd != 0
-```
-
-Android:
-
-```text
-ro.build.version.release=13
-/system/bin/servicemanager exists
-/system/bin/hwservicemanager exists
-/system/bin/toybox exists
-```
-
-Servicios:
-
-```text
-servicemanager running
-hwservicemanager fails due to missing hwbinder
-```
-
-Instalador:
-
-```text
-ANDROID_BINDER_READY
-ANDROID_USB_ROOTFS_READY
-ANDROID_USB_TOYBOX_OK
-ANDROID_REAL_SERVICEMANAGER_RUNNING
-ANDROID_USB_INSTALL_DONE
-```
-
----
-
-## 21. Cómo preparar commit y push
-
-Después de copiar este archivo como `README.md`:
+After copying this file to `README.md`:
 
 ```sh
-cp README_V2.md README.md
+cp README_V3.md README.md
 ```
 
-Revisar:
+Review:
 
 ```sh
 git status --short
 git diff -- README.md configs scripts
 ```
 
-Añadir:
+Add:
 
 ```sh
 git add README.md configs/android-usb.env
@@ -1324,39 +1378,39 @@ git push origin main
 
 ---
 
-## 22. Lecciones aprendidas
+## 22. Lessons learned
 
-### 22.1 El problema no era el USB
+### 22.1 The USB was necessary, but not the servicemanager bug
 
-El USB fue necesario para espacio y persistencia, pero no era la causa del fallo de `servicemanager`.
+Moving to USB solved storage and persistence. It did not directly solve `servicemanager`.
 
-### 22.2 El problema no era el binario de servicemanager
+### 22.2 The Android servicemanager binary was fine
 
-El binario Android 13 era capaz de arrancar. Lo impedía Binder.
+The Android 13 binary could run. Binder was preventing it from getting far enough.
 
-### 22.3 El primer fallo Binder era simple
+### 22.3 The first Binder bug was obvious
 
-No existía `/dev/binder`.
+`/dev/binder` did not exist.
 
-### 22.4 El segundo fallo Binder era sutil
+### 22.4 The second Binder bug was subtle
 
-Existía `/dev/binder`, pero Binder no podía hacer `mmap()` porque `get_vm_area` estaba a cero.
+`/dev/binder` existed, but Binder transaction memory mapping failed because `sym_get_vm_area` was zero.
 
-### 22.5 `/proc/kallsyms` fue la pieza clave
+### 22.5 `/proc/kallsyms` was the unlock
 
-No hizo falta `System.map`. La TV exponía las direcciones necesarias.
+The TV exposed the hidden kernel addresses needed by the dirty Binder module.
 
-### 22.6 No hace falta mini_servicemgr para este hito
+### 22.6 The mini service manager is not needed for this milestone
 
-El mini servicemanager fue útil como concepto/debug, pero el milestone real es que Android ejecuta su propio `servicemanager`.
+The milestone is stronger because Android's own `servicemanager` is running.
 
-### 22.7 No hay que falsificar hwbinder
+### 22.7 Do not fake `hwbinder`
 
-El siguiente obstáculo debe resolverse correctamente en el módulo Binder, no con symlinks.
+The next blocker must be fixed in the Binder module, not by symlinks or duplicated device nodes.
 
-### 22.8 El instalador debe ser pequeño
+### 22.8 Keep the public UX small
 
-Tres scripts son suficientes:
+Three scripts are enough:
 
 ```text
 install
@@ -1364,39 +1418,45 @@ tail
 diagnose
 ```
 
-Esto hace el proyecto más fácil de usar, revisar y pushear a `main`.
+That makes the project easier to use, easier to review, and easier to push to `main`.
 
 ---
 
-## 23. Referencias técnicas
+## 23. References
 
 - Android Binder overview: https://source.android.com/docs/core/architecture/ipc/binder-overview
-- Android HIDL Binder IPC and binder devices: https://source.android.com/docs/core/architecture/hidl/binder-ipc
+- Android HIDL Binder IPC and Binder devices: https://source.android.com/docs/core/architecture/hidl/binder-ipc
 - Waydroid custom images: https://docs.waydro.id/faq/using-custom-waydroid-images
 - Waydroid Lineage image build notes: https://docs.waydro.id/development/compile-waydroid-lineage-os-based-images
 
 ---
 
-## 24. Próximo hito recomendado
+## 24. Recommended next milestone
 
-El próximo hito debería ser:
+The next milestone should be:
 
 ```text
-binder.ko multi-device: /dev/binder + /dev/hwbinder + /dev/vndbinder
+binder.ko multi-device support: /dev/binder + /dev/hwbinder + /dev/vndbinder
 ```
 
-No avanzar a `zygote` todavía. El orden más sano es:
+Do not jump to zygote yet.
+
+Recommended order:
 
 ```text
-1. Binder multi-device
-2. hwservicemanager vivo
-3. FD passing test real
+1. Binder multi-device support
+2. hwservicemanager alive
+3. real Binder FD-passing test
 4. linkerconfig
 5. property service
-6. init/mini-init
+6. init or mini-init
 7. zygote
 8. system_server
-9. render Android dentro de app webOS
+9. Android rendering inside a webOS app
 ```
 
-Este milestone actual es bueno porque ya tenemos la prueba de vida más importante de la capa Binder framework: **el servicemanager real de Android 13 queda vivo dentro del rootfs Android montado en USB sobre webOS**.
+The current milestone is strong because the core Android framework Binder registry is alive:
+
+```text
+real Android 13 servicemanager running inside a USB-mounted Android rootfs on webOS
+```
