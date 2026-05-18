@@ -80,9 +80,9 @@ du -sk /var/* /var/.[!.]* 2>/dev/null \
 echo
 echo "== candidate cleanup dirs sizes =="
 for p in \
-  /media/internal/android-downloads \
-  /media/internal/android-images \
-  /media/internal/android-sidecar/logs \
+  /tmp/android-usb/android-downloads \
+  /tmp/android-usb/android-images \
+  /tmp/android-usb/android-sidecar/logs \
   /media/internal/downloads \
   /mnt/lg/appstore/cryptofs/apps/var/cache \
   /mnt/lg/appstore/cryptofs/tmp \

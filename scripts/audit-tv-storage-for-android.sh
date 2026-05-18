@@ -64,11 +64,11 @@ done
 echo
 echo "== android-related sizes =="
 for p in \
-  /media/internal/android-rootfs \
-  /media/internal/android-sidecar \
-  /media/internal/android-downloads \
-  /media/internal/android-images \
-  /media/internal/android-mounts \
+  /tmp/android-usb/android-rootfs \
+  /tmp/android-usb/android-sidecar \
+  /tmp/android-usb/android-downloads \
+  /tmp/android-usb/android-images \
+  /tmp/android-usb/android-mounts \
   /mnt/lg/appstore/android-rootfs \
   /mnt/lg/appstore/android-sidecar \
   /mnt/lg/appstore/android-downloads \
@@ -118,13 +118,13 @@ opkg info 2>/dev/null | grep -E '^(Package|Installed-Size|Size):' | head -160 ||
 echo
 echo "== our known safe cleanup estimate =="
 echo "--- android-sidecar logs"
-du -sh /media/internal/android-sidecar/logs 2>/dev/null || true
+du -sh /tmp/android-usb/android-sidecar/logs 2>/dev/null || true
 echo "--- android downloads"
-du -sh /media/internal/android-downloads 2>/dev/null || true
+du -sh /tmp/android-usb/android-downloads 2>/dev/null || true
 echo "--- android images"
-du -sh /media/internal/android-images 2>/dev/null || true
+du -sh /tmp/android-usb/android-images 2>/dev/null || true
 echo "--- android mounts"
-du -sh /media/internal/android-mounts 2>/dev/null || true
+du -sh /tmp/android-usb/android-mounts 2>/dev/null || true
 
 echo
 echo "TV_STORAGE_AUDIT_DONE"

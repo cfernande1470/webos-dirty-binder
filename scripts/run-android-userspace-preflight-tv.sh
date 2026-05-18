@@ -2,8 +2,8 @@
 set -euo pipefail
 
 TV_IP="${TV_IP:-192.168.2.121}"
-SIDE_DIR="${SIDE_DIR:-/media/internal/android-sidecar}"
-ANDROID_ROOTFS="${ANDROID_ROOTFS:-/media/internal/android-rootfs}"
+SIDE_DIR="${SIDE_DIR:-/tmp/android-usb/android-sidecar}"
+ANDROID_ROOTFS="${ANDROID_ROOTFS:-/tmp/android-usb/android-rootfs}"
 
 ssh root@"$TV_IP" "SIDE_DIR='$SIDE_DIR' ANDROID_ROOTFS='$ANDROID_ROOTFS' sh -s" <<'TVSH'
 set -eu

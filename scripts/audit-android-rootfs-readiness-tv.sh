@@ -15,7 +15,7 @@ id || true
 echo
 echo "== storage =="
 df -h / /media/internal /tmp 2>/dev/null || true
-du -sh /media/internal/android-sidecar /media/internal/android-rootfs 2>/dev/null || true
+du -sh /tmp/android-usb/android-sidecar /tmp/android-usb/android-rootfs 2>/dev/null || true
 
 echo
 echo "== network =="

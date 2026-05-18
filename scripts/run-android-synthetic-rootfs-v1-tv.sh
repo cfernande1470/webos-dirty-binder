@@ -2,10 +2,10 @@
 set -euo pipefail
 
 TV_IP="${TV_IP:-192.168.2.121}"
-ROOTFS="${ROOTFS:-/media/internal/android-rootfs}"
-IMG_DIR="${IMG_DIR:-/media/internal/android-images}"
-MNT_DIR="${MNT_DIR:-/media/internal/android-mounts}"
-USB_DIR="${USB_DIR:-/media/internal/android-usb}"
+ROOTFS="${ROOTFS:-/tmp/android-usb/android-rootfs}"
+IMG_DIR="${IMG_DIR:-/tmp/android-usb/android-images}"
+MNT_DIR="${MNT_DIR:-/tmp/android-usb/android-mounts}"
+USB_DIR="${USB_DIR:-/tmp/android-usb}"
 
 ssh root@"$TV_IP" "ROOTFS='$ROOTFS' IMG_DIR='$IMG_DIR' MNT_DIR='$MNT_DIR' USB_DIR='$USB_DIR' sh -s" <<'TVSH'
 set -eu

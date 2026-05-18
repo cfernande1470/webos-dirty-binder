@@ -23,7 +23,7 @@ echo
 echo "== binder module =="
 lsmod | grep -E '(^binder|binder)' || true
 cat /proc/modules | grep -E '(^binder|binder)' || true
-find /lib/modules /media/internal/android-sidecar -name 'binder.ko' -type f 2>/dev/null | while read f; do
+find /lib/modules /tmp/android-usb/android-sidecar -name 'binder.ko' -type f 2>/dev/null | while read f; do
   echo "--- $f"
   ls -lh "$f" || true
   strings "$f" | grep -Ei 'binder|transfer|fd|accept_fds|security_binder' | head -80 || true
@@ -69,7 +69,7 @@ dmesg 2>/dev/null | grep -Ei 'binder|fd|failed|panic|oops|bug|segfault|watchdog|
 
 echo
 echo "== android-sidecar deployed fd binaries =="
-ls -lh /media/internal/android-sidecar/bin 2>/dev/null | grep -Ei 'fd|binder|service|client' || true
+ls -lh /tmp/android-usb/android-sidecar/bin 2>/dev/null | grep -Ei 'fd|binder|service|client' || true
 
 echo
 echo "FD_AUTOPSY_TV_DONE"

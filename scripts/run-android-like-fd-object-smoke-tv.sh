@@ -16,7 +16,7 @@ exit 99
 set -euo pipefail
 
 TV_IP="${TV_IP:-192.168.2.121}"
-SIDE_DIR="${SIDE_DIR:-/media/internal/android-sidecar}"
+SIDE_DIR="${SIDE_DIR:-/tmp/android-usb/android-sidecar}"
 SERVICE="${SERVICE:-test.android.fdobject}"
 
 ssh root@"$TV_IP" "SIDE_DIR='$SIDE_DIR' SERVICE='$SERVICE' sh -s" <<'TVSH'

@@ -2,9 +2,9 @@
 set -euo pipefail
 
 TV_IP="${TV_IP:-192.168.2.121}"
-ROOTFS="${ROOTFS:-/media/internal/android-rootfs}"
-IMG_DIR="${IMG_DIR:-/media/internal/android-images}"
-MNT_DIR="${MNT_DIR:-/media/internal/android-mounts}"
+ROOTFS="${ROOTFS:-/tmp/android-usb/android-rootfs}"
+IMG_DIR="${IMG_DIR:-/tmp/android-usb/android-images}"
+MNT_DIR="${MNT_DIR:-/tmp/android-usb/android-mounts}"
 
 ssh root@"$TV_IP" "ROOTFS='$ROOTFS' IMG_DIR='$IMG_DIR' MNT_DIR='$MNT_DIR' sh -s" <<'TVSH'
 set -eu
@@ -39,7 +39,7 @@ fi
 
 echo
 echo "== storage =="
-df -h /media/internal /media/internal/android-usb "$ROOTFS" "$IMG_DIR" 2>/dev/null || true
+df -h /media/internal /tmp/android-usb "$ROOTFS" "$IMG_DIR" 2>/dev/null || true
 du -sh "$IMG_DIR" "$ROOTFS" 2>/dev/null || true
 
 echo

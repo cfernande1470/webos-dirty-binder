@@ -71,9 +71,9 @@ fi
 echo
 echo "== candidate cleanup dirs sizes =="
 for p in \
-  /media/internal/android-downloads \
-  /media/internal/android-images \
-  /media/internal/android-sidecar/logs \
+  /tmp/android-usb/android-downloads \
+  /tmp/android-usb/android-images \
+  /tmp/android-usb/android-sidecar/logs \
   /media/internal/downloads \
   /mnt/lg/appstore/cryptofs/apps/var/cache \
   /mnt/lg/appstore/cryptofs/tmp \
@@ -119,10 +119,10 @@ fi
 echo
 echo "== removable android staging estimate =="
 du -sk \
-  /media/internal/android-downloads \
-  /media/internal/android-images \
-  /media/internal/android-mounts \
-  /media/internal/android-sidecar/logs \
+  /tmp/android-usb/android-downloads \
+  /tmp/android-usb/android-images \
+  /tmp/android-usb/android-mounts \
+  /tmp/android-usb/android-sidecar/logs \
   2>/dev/null | sort -nr | human_kb || true
 
 echo

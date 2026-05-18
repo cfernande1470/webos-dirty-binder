@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TV_IP="${TV_IP:-192.168.2.121}"
-SIDE_DIR="${SIDE_DIR:-/home/root/android-sidecar}"
+SIDE_DIR="${SIDE_DIR:-/tmp/android-usb/android-sidecar}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"

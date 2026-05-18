@@ -2,11 +2,11 @@
 set -euo pipefail
 
 TV_IP="${TV_IP:-192.168.2.121}"
-SIDE_DIR="${SIDE_DIR:-/media/internal/android-sidecar}"
-ROOTFS="${ROOTFS:-/media/internal/android-rootfs}"
-IMG_DIR="${IMG_DIR:-/media/internal/android-images}"
-MNT_DIR="${MNT_DIR:-/media/internal/android-mounts}"
-USB_DIR="${USB_DIR:-/media/internal/android-usb}"
+SIDE_DIR="${SIDE_DIR:-/tmp/android-usb/android-sidecar}"
+ROOTFS="${ROOTFS:-/tmp/android-usb/android-rootfs}"
+IMG_DIR="${IMG_DIR:-/tmp/android-usb/android-images}"
+MNT_DIR="${MNT_DIR:-/tmp/android-usb/android-mounts}"
+USB_DIR="${USB_DIR:-/tmp/android-usb}"
 SERVICE="${SERVICE:-test.android.parcelfd}"
 
 ssh root@"$TV_IP" \

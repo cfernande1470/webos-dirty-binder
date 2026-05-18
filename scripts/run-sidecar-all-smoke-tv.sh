@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TV_IP="${TV_IP:-192.168.2.121}"
-SIDE_DIR="${SIDE_DIR:-/media/internal/android-sidecar}"
+SIDE_DIR="${SIDE_DIR:-/tmp/android-usb/android-sidecar}"
 CLIENTS="${CLIENTS:-8}"
 ROUNDS="${ROUNDS:-10}"
 

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 TV_IP="${TV_IP:-192.168.2.121}"
-SIDE_DIR="${SIDE_DIR:-/media/internal/android-sidecar}"
-ROOTFS="${ROOTFS:-/media/internal/android-rootfs}"
+SIDE_DIR="${SIDE_DIR:-/tmp/android-usb/android-sidecar}"
+ROOTFS="${ROOTFS:-/tmp/android-usb/android-rootfs}"
 
 OUT="logs/android-real-sm-v0-failure-$(date +%Y%m%d-%H%M%S).log"
 
