@@ -64,12 +64,6 @@ fi
 echo "Using binder.ko: $KO_LOCAL"
 
 echo
-echo "== Optional sidecar build =="
-if [ -x "$ROOT/scripts/build-sidecar.sh" ] && ! ls "$ROOT"/build/*_static >/dev/null 2>&1; then
-  "$ROOT/scripts/build-sidecar.sh" || true
-fi
-
-echo
 echo "== Remote prepare/install =="
 ssh root@"$TV_IP" \
   "ANDROID_USB_PART='$ANDROID_USB_PART' \
@@ -123,7 +117,26 @@ format_usb() {
     umount "$m" 2>/dev/null || umount -l "$m" 2>/dev/null || true
   done
 
+  # Extra safety: after all lazy/unmount attempts, refuse to format if the
+  # partition is still visible in /proc/mounts. This avoids mke2fs half-failures.
   sync
+
+  log "remaining mounts before mkfs:"
+  grep -E "$part|android-usb|/tmp/usb/sda/sda1" /proc/mounts || true
+
+  if grep -q "$part" /proc/mounts; then
+    log "ERROR: $part is still mounted/in use; refusing to format"
+    exit 1
+  fi
+
+  if command -v losetup >/dev/null 2>&1; then
+    losetup -a 2>/dev/null | grep 'android-usb' | cut -d: -f1 | while read -r loop; do
+      [ -n "$loop" ] || continue
+      log "losetup -d $loop"
+      losetup -d "$loop" 2>/dev/null || true
+    done
+  fi
+
   if command -v mkfs.ext4 >/dev/null 2>&1; then
     mkfs.ext4 -F -L androidusb "$part"
   elif command -v mke2fs >/dev/null 2>&1; then
@@ -177,17 +190,9 @@ ensure_usb
 TVPREP
 
 echo
-echo "== Copy binder.ko and optional sidecar binaries =="
+echo "== Copy binder.ko =="
 ssh root@"$TV_IP" "mkdir -p '$ANDROID_SIDE_DIR/modules' '$ANDROID_SIDE_DIR/bin' '$ANDROID_SIDE_DIR/logs' '$ANDROID_SIDE_DIR/run'"
 scp "$KO_LOCAL" root@"$TV_IP":"$ANDROID_SIDE_DIR/modules/binder.ko"
-
-if ls "$ROOT"/build/*_static >/dev/null 2>&1; then
-  for f in "$ROOT"/build/*_static; do
-    [ -f "$f" ] || continue
-    base="$(basename "$f" _static)"
-    scp "$f" root@"$TV_IP":"$ANDROID_SIDE_DIR/bin/$base" || true
-  done
-fi
 
 echo
 echo "== Start remote Android USB installer =="
