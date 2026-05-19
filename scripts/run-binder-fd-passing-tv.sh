@@ -4,7 +4,10 @@ set -euo pipefail
 echo "DIRECT_BINDER_FD_QUARANTINED"
 echo "Direct BINDER_TYPE_FD probes are disabled because they can freeze/reboot the TV."
 echo "Use scripts/run-fd-bridge-smoke-tv.sh instead."
-exit 99
+if [ "${BINDER_FD_STAGE_ALLOW:-0}" != "1" ]; then
+  exit 99
+fi
+echo "BINDER_FD_STAGE_ALLOW set: continuing staged direct-FD diagnostic."
 
 set -euo pipefail
 

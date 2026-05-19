@@ -18,6 +18,7 @@ ANDROID_CACHE_DIR="${ANDROID_CACHE_DIR:-$ANDROID_USB_MOUNT/android-cache}"
 ANDROID_BINDER_KO="${ANDROID_BINDER_KO:-$ANDROID_SIDE_DIR/modules/binder.ko}"
 REQUIRE_BINDER="${REQUIRE_BINDER:-1}"
 START_SERVICEMANAGER="${START_SERVICEMANAGER:-1}"
+FD_DEBUG_STAGE="${FD_DEBUG_STAGE:-7}"
 FORMAT_USB="${FORMAT_USB:-0}"
 CONFIRM_FORMAT_ANDROID_USB="${CONFIRM_FORMAT_ANDROID_USB:-NO}"
 FORCE_DOWNLOAD="${FORCE_DOWNLOAD:-0}"
@@ -59,6 +60,21 @@ fi
 if [ -z "$KO_LOCAL" ] || [ ! -f "$KO_LOCAL" ]; then
   echo "ERROR: binder.ko not found. Run ./scripts/build-module.sh first." >&2
   [ "$REQUIRE_BINDER" = "1" ] && exit 1
+fi
+
+
+# FINAL_BINDER_KO_VALIDATION
+if command -v modinfo >/dev/null 2>&1; then
+  modinfo -p "$KO_LOCAL" 2>/dev/null | grep -q '^fd_debug_stage:' || {
+    echo "ERROR: selected binder.ko lacks fd_debug_stage: $KO_LOCAL" >&2
+    exit 1
+  }
+fi
+if command -v readelf >/dev/null 2>&1; then
+  readelf -sW "$KO_LOCAL" 2>/dev/null | grep -q ' cleanup_module$' || {
+    echo "ERROR: selected binder.ko lacks cleanup_module and would load as [permanent]: $KO_LOCAL" >&2
+    exit 1
+  }
 fi
 
 echo "Using binder.ko: $KO_LOCAL"
@@ -339,7 +355,7 @@ load_binder_driver() {
       return 0
     }
     log "Loading binder module with symbols: $ANDROID_BINDER_KO"
-    insmod "$ANDROID_BINDER_KO" devices=binder,hwbinder,vndbinder $BINDER_ARGS 2>/tmp/android-binder-insmod.err || {
+    insmod "$ANDROID_BINDER_KO" devices=binder,hwbinder,vndbinder fd_debug_stage="$FD_DEBUG_STAGE" $BINDER_ARGS 2>/tmp/android-binder-insmod.err || {
       log "ERROR: insmod binder.ko failed"
       cat /tmp/android-binder-insmod.err 2>/dev/null || true
       dmesg | grep -i binder | tail -n 80 || true

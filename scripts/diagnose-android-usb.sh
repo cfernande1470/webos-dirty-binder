@@ -36,6 +36,30 @@ for f in /sys/module/*binder*/parameters/*; do
 done
 
 echo
+echo "== binder FD prerequisite symbols =="
+fd_ok=1
+for f in \
+  /sys/module/binder/parameters/sym___alloc_fd \
+  /sys/module/binder/parameters/sym___fd_install \
+  /sys/module/binder/parameters/sym___close_fd \
+  /sys/module/binder/parameters/sym_get_files_struct \
+  /sys/module/binder/parameters/sym_put_files_struct
+do
+  name="$(basename "$f")"
+  val="$(cat "$f" 2>/dev/null || echo 0)"
+  echo "$name=$val"
+  if [ "$val" = "0" ]; then
+    fd_ok=0
+  fi
+done
+
+if [ "$fd_ok" = "1" ]; then
+  echo "BINDER_FD_SYMBOLS_READY=YES"
+else
+  echo "BINDER_FD_SYMBOLS_READY=NO"
+fi
+
+echo
 echo "== android build props on disk =="
 grep -h '^ro.build.version.release=' "$R/system/build.prop" "$R/system/system/build.prop" "$R/vendor/build.prop" 2>/dev/null || true
 

@@ -141,6 +141,18 @@ else:
 PY_TASK_EUID_FIX
 
 
+
+echo "=== injecting Binder FD debug stage v6 ==="
+python3 "/home/pi/disk/webos-dirty-binder/scripts/inject-binder-fd-stage-v5.py" "$(pwd)"
+# FD_STAGE_V6_INJECT_ACTIVE
+
+echo "=== injecting Binder real FD stage v12 ==="
+python3 "/home/pi/disk/webos-dirty-binder/scripts/inject-binder-fd-real-v12.py" "$(pwd)"
+# FD_REAL_V12_INJECT_ACTIVE
+
+echo "=== injecting Binder unloadable test exit v3 ==="
+python3 "/home/pi/disk/webos-dirty-binder/scripts/inject-binder-unloadable-v3.py" "$(pwd)"
+# UNLOADABLE_V3_INJECT_ACTIVE
 make ARCH=arm64 HOSTCFLAGS="-fcommon" olddefconfig
 
 echo "=== preparing kernel build files ==="
